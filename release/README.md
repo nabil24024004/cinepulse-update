@@ -2,14 +2,17 @@
 
 ## Release Artifact Details
 - **File Name:** `cinepulse-v1.0-release.apk`
-- **File Size:** ~4.7 MB (4,925,458 bytes)
+- **File Size:** ~4.73 MB (4,961,409 bytes)
 - **Release Version:** v1.0.1
 - **GitHub Release URL:** [https://github.com/ImAhmedZarir/cinepulse/releases/tag/v1.0.1](https://github.com/ImAhmedZarir/cinepulse/releases/tag/v1.0.1)
 - **Direct Download URL:** [https://github.com/ImAhmedZarir/cinepulse/releases/download/v1.0.1/cinepulse-v1.0-release.apk](https://github.com/ImAhmedZarir/cinepulse/releases/download/v1.0.1/cinepulse-v1.0-release.apk)
 - **Minimum OS Version:** Android 7.0 (API 24)
-- **Target OS Version:** Android 16 (API 36)
+- **Target OS Version:** Android 15 (API 35) / Android 16 (compileSdk 36)
+- **Contributor:** ImAhmedZarir (Ahmed Ishtiaque Zarir)
+- **Telegram Contact:** [https://t.me/@imahmedzarir](https://t.me/@imahmedzarir)
 - **Architecture:** Universal APK (ARM64, ARMv7, x86_64)
-- **SHA-256 Checksum:** `86680ebf7786807e846f8b4f4b5b0f0fa2c623abb58398d8fa6f0fd302308fe4`
+- **Signature Schemes:** APK Signature Scheme v1 (JAR signing) + v2 (Full APK block)
+- **SHA-256 Checksum:** `a8d3a124fd0d04813c04d945c5e9934aedcbebe8823981368764e226f75be06f`
 
 ---
 
