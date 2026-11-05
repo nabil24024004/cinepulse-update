@@ -1659,13 +1659,13 @@ function viewSettings(){
      '<div class="srow"><div><b>Reset settings</b><small>Back to the defaults.</small></div><button class="sbtn" data-do="reset">Reset</button></div></div>'+
    '<h2>Downloads</h2><div class="panel app"><div class="mk2">'+icon('dl')+'</div><div><b>Android app &amp; Offline Player</b><small>Full offline downloads and media manager operate in the CinePulse Android app.</small></div><a class="btn sm lg-solid press" href="'+APK+'" target="_blank" rel="noopener noreferrer">Get the app</a></div>'+
    '<h2>About &amp; Developer Credits</h2><div class="panel">'+
-     '<div class="srow"><div><b>Architecture &amp; Development</b><small>Designed &amp; built by <a class="link" href="https://ahmedishtiaquezarir.pro.bd/" target="_blank" rel="noopener noreferrer">Ahmed Ishtiaque Zarir</a></small></div><button class="sbtn" data-do="credit">Full credits</button></div>'+
+     '<div class="srow"><div><b>Architecture &amp; Development</b><small>Designed &amp; built by <a class="link" href="https://ahmedishtiaquezarir.pro.bd/" target="_blank" rel="noopener noreferrer">ImAhmedZarir (Ahmed Ishtiaque Zarir)</a></small></div><button class="sbtn" data-do="credit">Full credits</button></div>'+
      '<div class="srow"><div><b>Liquid Glass Engine</b><small>Android Glassmorphism components by QWEA0</small></div></div>'+
      '<div class="srow"><div><b>Solid Glass Tokens</b><small>Physical edge &amp; refraction specification by deeplethe</small></div></div>'+
      '<div class="srow"><div><b>Media Engine &amp; Pipeline</b><small>Google ExoPlayer / Media3 &amp; Coil image loader</small></div></div></div>'+
    '<h2>Support Developer &amp; Donations</h2><div class="panel">'+
      '<div class="srow"><div><b>Donate &amp; Inquiries</b><small>Help upgrade from free hosting to dedicated cloud servers: <a class="link" href="mailto:ahmedishtiaquezarir@gmail.com">ahmedishtiaquezarir@gmail.com</a></small></div></div>'+
-     '<div class="srow"><div><b>Telegram Contact</b><small><a class="link" href="https://t.me/ahmedishtiaquezarir" target="_blank" rel="noopener noreferrer">t.me/ahmedishtiaquezarir</a> (@ahmedishtiaquezarir)</small></div></div></div>'+
+     '<div class="srow"><div><b>Telegram Contact</b><small><a class="link" href="https://t.me/@imahmedzarir" target="_blank" rel="noopener noreferrer">https://t.me/@imahmedzarir</a></small></div></div></div>'+
    '<h2>Privacy, Legal Terms &amp; Hosting</h2><div class="panel"><div class="srow"><div><b>Non-Hosting Policy</b><small>CinePulse and author do NOT host or stream copyrighted media. The API exclusively indexes public metadata; streams resolve client-side.</small></div></div>'+
      '<div class="srow"><div><b>Free Cloud Hosting &amp; Regional DNS</b><small>Hosted on free community tier. If blocked by regional ISPs, use custom DNS (Cloudflare 1.1.1.1, Google 8.8.8.8) or a VPN.</small></div></div>'+
      '<div class="srow"><div><b>Zero Tracking</b><small>No user tracking, no telemetry, and no watch history sent to external servers.</small></div></div>'+
@@ -1956,7 +1956,7 @@ function credit(force){
   showSheet(LOGO+'<h3>CinePulse Ecosystem</h3>'+
     '<p style="font-size:13px;color:var(--fg2);margin:8px 0 14px">Architected with Solid Glass &amp; Liquid Glass design system.</p>'+
     '<div style="text-align:left;background:rgba(255,255,255,.05);border-radius:18px;padding:14px;border:1px solid rgba(255,255,255,.1);margin-bottom:14px">'+
-      '<b style="display:block;color:#fff;font-size:14px">Ahmed Ishtiaque Zarir</b><small style="color:var(--fg2);display:block;margin-bottom:8px">Founder, Core Architecture &amp; API Integration · <a class="link" href="https://ahmedishtiaquezarir.pro.bd/" target="_blank" rel="noopener noreferrer">Portfolio</a></small>'+
+      '<b style="display:block;color:#fff;font-size:14px">ImAhmedZarir (Ahmed Ishtiaque Zarir)</b><small style="color:var(--fg2);display:block;margin-bottom:8px">Lead Contributor, Core Architecture &amp; API Integration · <a class="link" href="https://ahmedishtiaquezarir.pro.bd/" target="_blank" rel="noopener noreferrer">Portfolio</a></small>'+
       '<b style="display:block;color:#fff;font-size:14px">QWEA0</b><small style="color:var(--fg2);display:block;margin-bottom:8px">Liquid Glass Android Component Library</small>'+
       '<b style="display:block;color:#fff;font-size:14px">deeplethe</b><small style="color:var(--fg2);display:block;margin-bottom:8px">Solid Glass Design Tokens &amp; Physical Edge Specs</small>'+
       '<b style="display:block;color:#fff;font-size:14px">ExoPlayer / Media3 &amp; Coil</b><small style="color:var(--fg2);display:block">Media Engine &amp; Image Pipeline</small>'+
@@ -1964,7 +1964,7 @@ function credit(force){
     '<div style="text-align:left;font-size:11.5px;color:var(--fg3);line-height:1.45;margin-bottom:16px">'+
       '<p><b>Non-Hosting Policy:</b> CinePulse does NOT host or stream copyrighted media. API exclusively indexes public metadata.</p>'+
       '<p style="margin-top:4px"><b>Free Hosting &amp; DNS:</b> Hosted on free cloud tier. If blocked by your ISP, use custom DNS (1.1.1.1, 8.8.8.8) or a VPN.</p>'+
-      '<p style="margin-top:4px"><b>Donations &amp; Support:</b> Donate/contact: <a class="link" href="mailto:ahmedishtiaquezarir@gmail.com">ahmedishtiaquezarir@gmail.com</a> · Telegram: <a class="link" href="https://t.me/ahmedishtiaquezarir" target="_blank" rel="noopener noreferrer">@ahmedishtiaquezarir</a></p>'+
+      '<p style="margin-top:4px"><b>Donations &amp; Support:</b> Donate/contact: <a class="link" href="mailto:ahmedishtiaquezarir@gmail.com">ahmedishtiaquezarir@gmail.com</a> · Telegram: <a class="link" href="https://t.me/@imahmedzarir" target="_blank" rel="noopener noreferrer">https://t.me/@imahmedzarir</a></p>'+
       '<p style="margin-top:4px"><b>Zero Tracking:</b> API collects no logs, no user tracking, and no external storage of watch history.</p>'+
       '<p style="margin-top:4px"><b>Usage Terms:</b> Free to use strictly for non-commercial educational use.</p>'+
       '<p style="margin-top:4px"><b>Client Security:</b> Source code is private and client connections cannot be cryptographically secured on untrusted environments.</p>'+

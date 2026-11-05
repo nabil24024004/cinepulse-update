@@ -324,8 +324,8 @@ fun SettingsScreen(
                             }
                             Spacer(Modifier.width(14.dp))
                             Column(modifier = Modifier.weight(1f)) {
-                                Text("Ahmed Ishtiaque Zarir", color = PureWhite, fontSize = 15.sp, fontWeight = FontWeight.Bold)
-                                Text("Lead Creator & Architect", color = TextSecondary, fontSize = 12.sp)
+                                Text("ImAhmedZarir (Ahmed Ishtiaque Zarir)", color = PureWhite, fontSize = 15.sp, fontWeight = FontWeight.Bold)
+                                Text("Lead Creator & Contributor", color = TextSecondary, fontSize = 12.sp)
                             }
                             SolidGlassSecondaryButton(
                                 text = "Portfolio",
@@ -436,7 +436,7 @@ fun SettingsScreen(
                                 .background(SolidGlassControlBg)
                                 .border(1.dp, SolidGlassBorderBrush, RoundedCornerShape(12.dp))
                                 .clickable {
-                                    browserUrl = "https://t.me/ahmedishtiaquezarir"
+                                    browserUrl = "https://t.me/@imahmedzarir"
                                     browserTitle = "Telegram Contact"
                                     showInAppBrowser = true
                                 }
@@ -446,7 +446,7 @@ fun SettingsScreen(
                         ) {
                             Column {
                                 Text("Telegram Contact", color = PureWhite, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
-                                Text("t.me/ahmedishtiaquezarir (@ahmedishtiaquezarir)", color = BrandCoral, fontSize = 11.5.sp)
+                                Text("https://t.me/@imahmedzarir", color = BrandCoral, fontSize = 11.5.sp)
                             }
                             Icon(Icons.AutoMirrored.Filled.OpenInNew, contentDescription = null, tint = PureWhite, modifier = Modifier.size(16.dp))
                         }

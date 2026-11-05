@@ -10,7 +10,7 @@ plugins {
 
 android {
   namespace = "com.example"
-  compileSdk = 35
+  compileSdk = 36
 
   defaultConfig {
     applicationId = "com.devzar.cinepulse"
@@ -23,16 +23,13 @@ android {
   }
 
   signingConfigs {
-    val releaseKeystore = file(System.getenv("KEYSTORE_PATH") ?: "${rootDir}/release.keystore")
-    if (releaseKeystore.exists()) {
-      create("release") {
-        storeFile = releaseKeystore
-        storePassword = System.getenv("STORE_PASSWORD") ?: "cinepulse"
-        keyAlias = System.getenv("KEY_ALIAS") ?: "cinepulse"
-        keyPassword = System.getenv("KEY_PASSWORD") ?: "cinepulse"
-        enableV1Signing = true
-        enableV2Signing = true
-      }
+    create("release") {
+      storeFile = file("${rootDir}/release.keystore")
+      storePassword = "cinepulse"
+      keyAlias = "cinepulse"
+      keyPassword = "cinepulse"
+      enableV1Signing = true
+      enableV2Signing = true
     }
   }
 
@@ -42,10 +39,10 @@ android {
       isMinifyEnabled = true
       isShrinkResources = true
       proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
-      signingConfigs.findByName("release")?.let { signingConfig = it }
+      signingConfig = signingConfigs.getByName("release")
     }
     debug {
-      signingConfigs.findByName("release")?.let { signingConfig = it }
+      signingConfig = signingConfigs.getByName("release")
     }
   }
   compileOptions {

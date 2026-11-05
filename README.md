@@ -89,7 +89,7 @@ CinePulse synthesizes two complementary glassmorphism design systems:
 
 CinePulse is made possible through the contributions of exceptional developers and open-source foundations:
 
-- **Ahmed Ishtiaque Zarir:** Founder, Core Architecture & API Integration. ([Portfolio](https://ahmedishtiaquezarir.pro.bd/))
+- **ImAhmedZarir (Ahmed Ishtiaque Zarir):** Lead Contributor, Core Architecture & API Integration. ([Portfolio](https://ahmedishtiaquezarir.pro.bd/))
 - **QWEA0:** Creator of [Liquid-Glass-Android](https://github.com/QWEA0/Liquid-Glass-Android) (translucent backdrop blur and specular refraction engine).
 - **deeplethe:** Creator of [Solid Glass](https://github.com/deeplethe/solid-glass) (physical rim highlights, inner hairlines, and design token hierarchy).
 - **Google AndroidX Media3 Team:** High-performance ExoPlayer media engine, resilient extractors, and subtitle parsers.
@@ -121,9 +121,9 @@ CinePulse is made possible through the contributions of exceptional developers a
 
 Maintaining the live API server, optimizing stream parsers, and keeping the open-source client updated requires continuous infrastructure costs. If you find CinePulse useful and want to help upgrade the server from free hosting to dedicated, high-speed cloud instances:
 
-- **Developer:** Ahmed Ishtiaque Zarir
+- **Lead Contributor:** ImAhmedZarir (Ahmed Ishtiaque Zarir)
 - **Email (Donations & Inquiries):** `ahmedishtiaquezarir@gmail.com`
-- **Telegram Contact:** [t.me/ahmedishtiaquezarir](https://t.me/ahmedishtiaquezarir) (`@ahmedishtiaquezarir`)
+- **Telegram Contact:** [https://t.me/@imahmedzarir](https://t.me/@imahmedzarir)
 - **Portfolio & Official Site:** [ahmedishtiaquezarir.pro.bd](https://ahmedishtiaquezarir.pro.bd/)
 
 Every contribution helps keep the CinePulse ecosystem alive, fast, and free for the community.

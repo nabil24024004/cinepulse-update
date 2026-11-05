@@ -83,9 +83,9 @@ jobs:
             - **100% Ecosystem Symmetry**: Android client and PHP webapp share identical layout, features, and zero-emoji UI.
             - **Offline Player & Barrier**: Play downloaded movies without internet, with automatic cached homepage fallback.
             - **Real-Time Streaming**: Search and video stream requests resolve uncached in real-time.
-            - **Developer Credits**: Ahmed Ishtiaque Zarir (Founder), QWEA0 (Liquid Glass), deeplethe (Solid Glass), Google ExoPlayer/Media3, Coil.
+            - **Developer Credits**: ImAhmedZarir (Lead Contributor), QWEA0 (Liquid Glass), deeplethe (Solid Glass), Google ExoPlayer/Media3, Coil.
             - **Privacy & Legality**: Zero tracking, educational non-commercial use, and non-hosting content disclosure (no copyrighted files hosted on server).
-            - **Donations & Support**: Donate/contact via email (ahmedishtiaquezarir@gmail.com) or Telegram (t.me/ahmedishtiaquezarir).
+            - **Donations & Support**: Donate/contact via email (ahmedishtiaquezarir@gmail.com) or Telegram (https://t.me/@imahmedzarir).
           files: build-artifacts/cinepulse-v1.0-release.apk
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -63,7 +63,7 @@ When submitting changes that touch network calls or storage, verify that you adh
 - **Zero Tracking:** CinePulse never tracks users, does not record IP addresses for analytics, and transmits no viewing activity to external telemetry servers. All watch history and progress reside strictly on local storage (`Room` SQLite on Android, `localStorage` on Web).
 - **Non-Commercial Educational Use:** The CinePulse API and applications are free to use strictly for non-commercial educational purposes.
 - **Client Security Disclosure:** Client source code is private and client connections cannot be cryptographically secured on untrusted environments. Contributors should avoid making cryptographic assumptions about client-side tokens.
-- **Developer Donations & Infrastructure Support:** To support server hosting costs and upgrades, donations and inquiries can be sent directly to Ahmed Ishtiaque Zarir via email (`ahmedishtiaquezarir@gmail.com`) or Telegram (`t.me/ahmedishtiaquezarir`).
+- **Developer Donations & Infrastructure Support:** To support server hosting costs and upgrades, donations and inquiries can be sent directly to ImAhmedZarir (Ahmed Ishtiaque Zarir) via email (`ahmedishtiaquezarir@gmail.com`) or Telegram (`https://t.me/@imahmedzarir`).
 
 ---
 
