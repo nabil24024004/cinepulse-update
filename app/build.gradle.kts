@@ -10,12 +10,12 @@ plugins {
 
 android {
   namespace = "com.example"
-  compileSdk { version = release(36) { minorApiLevel = 1 } }
+  compileSdk = 35
 
   defaultConfig {
     applicationId = "com.devzar.cinepulse"
     minSdk = 24
-    targetSdk = 36
+    targetSdk = 35
     versionCode = 1
     versionName = "1.0"
 
@@ -23,13 +23,15 @@ android {
   }
 
   signingConfigs {
-    val uploadKeystore = file(System.getenv("KEYSTORE_PATH") ?: "${rootDir}/my-upload-key.jks")
-    if (uploadKeystore.exists()) {
+    val releaseKeystore = file(System.getenv("KEYSTORE_PATH") ?: "${rootDir}/release.keystore")
+    if (releaseKeystore.exists()) {
       create("release") {
-        storeFile = uploadKeystore
-        storePassword = System.getenv("STORE_PASSWORD") ?: "android"
-        keyAlias = "upload"
-        keyPassword = System.getenv("KEY_PASSWORD") ?: "android"
+        storeFile = releaseKeystore
+        storePassword = System.getenv("STORE_PASSWORD") ?: "cinepulse"
+        keyAlias = System.getenv("KEY_ALIAS") ?: "cinepulse"
+        keyPassword = System.getenv("KEY_PASSWORD") ?: "cinepulse"
+        enableV1Signing = true
+        enableV2Signing = true
       }
     }
   }

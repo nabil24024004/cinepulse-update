@@ -51,6 +51,14 @@ jobs:
             exit 1
           fi
 
+      - name: Verify APK Signature & Package Info
+        run: |
+          APKSIGNER=$(find $ANDROID_HOME/build-tools -name apksigner | sort -V | tail -n 1)
+          if [ -n "$APKSIGNER" ]; then
+            echo "Using apksigner: $APKSIGNER"
+            "$APKSIGNER" verify --verbose build-artifacts/cinepulse-v1.0-release.apk
+          fi
+
       - name: Upload Release APK to Workflow Artifacts
         uses: actions/upload-artifact@v4
         with:
@@ -65,6 +73,7 @@ jobs:
         with:
           tag_name: v1.0.1
           name: "CinePulse v1.0.1 (Solid & Liquid Glass Edition)"
+          overwrite_files: true
           body: |
             ### CinePulse v1.0.1 Production Release
 
