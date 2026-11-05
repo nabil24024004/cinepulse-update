@@ -4,8 +4,8 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 
 // ═════════════════════════════════════════════════════════════════════════════
-// 💎 STRICT 3-COLOR PALETTE (Exact Logo Red, Pitch Black & Pure White)
-// Inspired by Netflix & Apple TV — Zero grayish/muddy tones, Zero orange fade
+// STRICT 3-COLOR PALETTE (Exact Logo Red, Pitch Black & Pure White)
+// Solid Glass & Liquid Glass Unified Theme — Zero grayish/muddy tones
 // ═════════════════════════════════════════════════════════════════════════════
 
 // 1. Exact CinePulse Logo Crimson Red (Electric, punchy, sampled directly from logo)
@@ -95,3 +95,37 @@ val LiquidGlassSurfaceGradient = Brush.verticalGradient(
         Color(0x08FFFFFF)
     )
 )
+
+// ── Solid Glass Tokens (Tactility, Precision, Physicality, Materiality) ─────────
+val SolidGlassRim          = Color(0x3DFFFFFF)   // Line of light along the top edge
+val SolidGlassInner        = Color(0x14FFFFFF)   // Inner hairline
+val SolidGlassEdge         = Color(0x1AFFFFFF)   // Hairline rim all around
+val SolidGlassContact      = Color(0x33000000)   // Contact shadow
+val SolidGlassShade        = Color(0x99000000)   // Lifted shadow
+val SolidGlassPanelBg      = Color(0x12FFFFFF)   // Thinnest: panel containers
+val SolidGlassCardBg       = Color(0x401E222A)   // Smoky card pane
+val SolidGlassPopoverBg    = Color(0xF2121418)   // Thickest: popovers, dialogs, dock
+val SolidGlassControlBg    = Color(0x1AFFFFFF)   // Clear glass controls
+
+val SolidGlassBorderBrush = Brush.verticalGradient(
+    listOf(
+        SolidGlassRim,
+        SolidGlassEdge,
+        SolidGlassInner
+    )
+)
+
+val SolidGlassCardGradient = Brush.verticalGradient(
+    listOf(
+        Color(0x402A303C),
+        Color(0x28161920)
+    )
+)
+
+val SolidGlassPanelGradient = Brush.verticalGradient(
+    listOf(
+        Color(0x18FFFFFF),
+        Color(0x08FFFFFF)
+    )
+)
+

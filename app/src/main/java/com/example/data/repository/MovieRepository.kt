@@ -312,4 +312,10 @@ class MovieRepository(
             }
         } catch (_: Exception) {}
     }
+
+    suspend fun clearWatchlist() = withContext(Dispatchers.IO) {
+        try {
+            dao.clearWatchlist()
+        } catch (_: Exception) {}
+    }
 }

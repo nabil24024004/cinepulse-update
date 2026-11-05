@@ -35,6 +35,12 @@ import com.example.ui.theme.*
 fun HomeScreen(
     uiState: HomeUiState,
     watchHistory: List<WatchHistoryEntity>,
+    isOffline: Boolean = false,
+    isGetStartedDismissed: Boolean = false,
+    onDismissGetStarted: () -> Unit = {},
+    onExploreClick: () -> Unit = {},
+    onLibraryClick: () -> Unit = {},
+    onOpenDownloads: () -> Unit = {},
     onMovieClick: (MovieItem) -> Unit,
     onWatchHeroClick: (MovieItem) -> Unit,
     onResumeHistoryClick: (WatchHistoryEntity) -> Unit,
@@ -151,6 +157,24 @@ fun HomeScreen(
                         fontWeight = FontWeight.Medium
                     )
                 }
+            }
+        }
+
+        // ── Offline Mode Barrier ──────────────────────────────────────────────
+        if (isOffline) {
+            item {
+                SolidGlassOfflineBanner(onOpenDownloads = onOpenDownloads)
+            }
+        }
+
+        // ── Get Started Welcome Banner ────────────────────────────────────────
+        if (!isGetStartedDismissed) {
+            item {
+                SolidGlassGetStartedBanner(
+                    onExploreClick = onExploreClick,
+                    onLibraryClick = onLibraryClick,
+                    onDismiss = onDismissGetStarted
+                )
             }
         }
 

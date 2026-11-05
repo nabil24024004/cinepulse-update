@@ -1,40 +1,44 @@
-# CinePulse v1.0 Release (Liquid Glass Edition)
+# CinePulse Release Artifacts (Solid & Liquid Glass Edition)
 
-## 📦 Release Artifact Details
+## Release Artifact Details
 - **File Name:** `cinepulse-v1.0-release.apk`
-- **File Size:** 4,113,263 bytes (~3.92 MB)
-- **SHA-256 Checksum:** `32F97349BC4FBDC808CD8696238137E39BD2D15416898C0E131DE734DD99CDF2`
+- **File Size:** ~3.92 MB
 - **Minimum OS Version:** Android 7.0 (API 24)
 - **Target OS Version:** Android 16 (API 36)
 - **Architecture:** Universal APK (ARM64, ARMv7, x86_64)
 
 ---
 
-## 💎 Design & Visual Highlights
+## Design and Visual Highlights
 - **Strict 3-Color Cinema Palette:**
   - CinePulse Crimson Red (`#EE1E50` / `#FF2A55`)
   - True OLED Pitch Black (`#000000`)
   - Crisp Pure White (`#FFFFFF`)
-- **Apple iOS Liquid-Glass UI:** Translucent specular borders (`LiquidGlassBorderBrush`), ambient sheens, and fluid spring physics on all touch elements.
-- **Edge-to-Edge Experience:** Seamless integration with system status and navigation bars with cutout safe insets.
+- **Solid Glass & Liquid Glass UI:** Translucent specular borders, physical rim highlights, inner hairlines, and fluid spring physics on all interactive elements.
+- **Zero-Emoji User Interface:** Professional vector iconography across all components, badges, and menus.
+- **Unified Ecosystem Symmetry:** 100% visual and functional alignment with the CinePulse Web application.
 
 ---
 
-## ⚡ Performance & Streaming Engine
-- **AndroidX Media3 ExoPlayer:** Adaptive 1080p streaming with instant seeking.
-- **Picture-in-Picture (PiP):** Floating screen mode with automatic audio shutoff upon window dismissal.
-- **Subtitles & Multi-Audio:** UTF-8 SRT subtitle engine with auto-selected default tracks and real-time 250ms sync intervals.
-- **Background Downloads:** Integrated with Android `DownloadManager` for reliable downloads to `Downloads/CinePulse/`.
-- **Ultra-Low RAM Footprint:** Optimized for smooth 60fps operation even on 2GB RAM devices without GPU blur strain.
+## Performance and Media Engine
+- **AndroidX Media3 ExoPlayer:** Adaptive 1080p MP4 streaming with instant seeking and resilient container parsers.
+- **Picture-in-Picture (PiP):** Dedicated floating window mode with automated lifecycle audio termination upon dismissal.
+- **Subtitles and Multi-Audio:** UTF-8 SRT subtitle parser with auto-selected default language and 250ms sync intervals.
+- **Offline Barrier & Downloads:** Seamless offline fallback banner and integrated local downloaded media manager.
+- **Homepage Caching & Real-Time Search:** Instant launch via disk-cached catalog feed, with strictly uncached real-time search and streaming.
+- **Ultra-Low Memory Footprint:** Tuned for 60fps operation on low-RAM devices without GPU strain.
 
 ---
 
-## 🛠️ Verification
-You can verify the integrity of the downloaded APK using PowerShell:
+## Verification
+You can verify the integrity of the release APK using SHA-256 checksum tools:
+
+Linux / macOS:
+```bash
+sha256sum cinepulse-v1.0-release.apk
+```
+
+Windows PowerShell:
 ```powershell
 Get-FileHash cinepulse-v1.0-release.apk -Algorithm SHA256
-```
-Expected Hash:
-```
-32F97349BC4FBDC808CD8696238137E39BD2D15416898C0E131DE734DD99CDF2
 ```

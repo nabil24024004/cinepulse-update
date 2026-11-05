@@ -14,14 +14,10 @@ import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.BookmarkBorder
-import androidx.compose.material.icons.filled.Code
-import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.Explore
-import androidx.compose.material.icons.filled.History
-import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -42,12 +38,14 @@ import coil.request.ImageRequest
 import com.example.data.local.WatchHistoryEntity
 import com.example.data.local.WatchlistEntity
 import com.example.data.model.MovieItem
+import com.example.ui.DownloadedMediaItem
 import com.example.ui.components.*
 import com.example.ui.theme.*
 
 enum class LibraryTab {
     WATCHLIST,
-    HISTORY
+    HISTORY,
+    DOWNLOADS
 }
 
 // ─── Glass Tab Pill Row ───────────────────────────────────────────────────────
@@ -57,6 +55,7 @@ private fun GlassTabRow(
     selectedTab: LibraryTab,
     watchlistCount: Int,
     historyCount: Int,
+    downloadsCount: Int,
     onTabSelected: (LibraryTab) -> Unit
 ) {
     Box(
@@ -74,6 +73,7 @@ private fun GlassTabRow(
                 val label = when (tab) {
                     LibraryTab.WATCHLIST -> "Watchlist ($watchlistCount)"
                     LibraryTab.HISTORY   -> "History ($historyCount)"
+                    LibraryTab.DOWNLOADS -> "Downloads ($downloadsCount)"
                 }
                 Box(
                     modifier = Modifier
@@ -105,8 +105,10 @@ private fun GlassTabRow(
                         style = MaterialTheme.typography.bodyMedium.copy(
                             fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
                             color = if (isSelected) PureWhite else TextSecondary,
-                            fontSize = 13.sp
-                        )
+                            fontSize = 12.sp
+                        ),
+                        maxLines = 1,
+                        softWrap = false
                     )
                 }
             }
@@ -228,6 +230,143 @@ private fun HistoryEmptyState() {
         }
     }
 }
+
+@Composable
+private fun DownloadsEmptyState(onExploreClick: () -> Unit) {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(32.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        SolidGlassCard(
+            cornerRadius = 24.dp,
+            modifier = Modifier.padding(16.dp)
+        ) {
+            Column(
+                modifier = Modifier.padding(28.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(68.dp)
+                        .clip(CircleShape)
+                        .background(Color.White.copy(alpha = 0.08f)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.DownloadDone,
+                        contentDescription = null,
+                        tint = BrandCoral,
+                        modifier = Modifier.size(32.dp)
+                    )
+                }
+                Spacer(Modifier.height(18.dp))
+                Text(
+                    text = "No Downloaded Media",
+                    color = PureWhite,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 17.sp
+                )
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    text = "Downloaded movies and episodes are saved to your device for offline playback with zero internet barrier.",
+                    color = TextSecondary,
+                    fontSize = 12.5.sp,
+                    textAlign = TextAlign.Center
+                )
+                Spacer(Modifier.height(20.dp))
+                SolidGlassButton(
+                    text = "Discover Content",
+                    onClick = onExploreClick,
+                    leadingIcon = Icons.Default.Explore
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun DownloadedMovieRowCard(
+    item: DownloadedMediaItem,
+    onPlayClick: () -> Unit,
+    onDeleteClick: () -> Unit
+) {
+    SolidGlassCard(
+        cornerRadius = 16.dp,
+        onClick = onPlayClick,
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(14.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(46.dp)
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(Color.White.copy(alpha = 0.08f)),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = Icons.Default.PlayArrow,
+                    contentDescription = "Play",
+                    tint = BrandCoral,
+                    modifier = Modifier.size(26.dp)
+                )
+            }
+            Spacer(Modifier.width(14.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = item.title,
+                    color = PureWhite,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 14.5.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Spacer(Modifier.height(4.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    SolidGlassTag(text = item.resolution, textColor = PureWhite)
+                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        text = "${item.sizeBytes / (1024 * 1024)} MB",
+                        color = TextSecondary,
+                        fontSize = 12.sp
+                    )
+                }
+            }
+            Spacer(Modifier.width(10.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                SolidGlassButton(
+                    text = "Play",
+                    onClick = onPlayClick,
+                    leadingIcon = Icons.Default.PlayArrow,
+                    modifier = Modifier.height(34.dp)
+                )
+                Spacer(Modifier.width(8.dp))
+                Box(
+                    modifier = Modifier
+                        .size(34.dp)
+                        .clip(CircleShape)
+                        .background(Color.White.copy(alpha = 0.08f))
+                        .clickable(onClick = onDeleteClick),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Delete,
+                        contentDescription = "Delete",
+                        tint = CinemaRed,
+                        modifier = Modifier.size(16.dp)
+                    )
+                }
+            }
+        }
+    }
+}
+
 
 // ─── History Row Card ─────────────────────────────────────────────────────────
 
@@ -353,12 +492,15 @@ private fun HistoryRowCard(
 fun LibraryScreen(
     watchlist: List<WatchlistEntity>,
     watchHistory: List<WatchHistoryEntity>,
+    downloadedItems: List<DownloadedMediaItem> = emptyList(),
     onMovieClick: (MovieItem) -> Unit,
     onResumeHistoryClick: (WatchHistoryEntity) -> Unit,
     onDeleteHistoryItem: (String) -> Unit,
     onClearHistory: () -> Unit,
     onExploreClick: () -> Unit,
-    onOpenDevCredit: () -> Unit = {},
+    onPlayDownloadedItem: (DownloadedMediaItem) -> Unit = {},
+    onDeleteDownloadedFile: (java.io.File) -> Unit = {},
+    onRefreshDownloads: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     var selectedTab by remember { mutableStateOf(LibraryTab.WATCHLIST) }
@@ -375,7 +517,7 @@ fun LibraryScreen(
             modifier = Modifier
                 .fillMaxWidth()
                 .statusBarsPadding()
-                .padding(start = 16.dp, end = 8.dp, top = 8.dp, bottom = 4.dp),
+                .padding(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 4.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
@@ -388,22 +530,11 @@ fun LibraryScreen(
             )
 
             Row(verticalAlignment = Alignment.CenterVertically) {
-                // Dev credit — small glass icon button
-                Box(
-                    modifier = Modifier
-                        .size(36.dp)
-                        .clip(RoundedCornerShape(12.dp))
-                        .background(LiquidGlassSurface)
-                        .border(1.dp, LiquidGlassBorderBrush, RoundedCornerShape(12.dp))
-                        .clickable { onOpenDevCredit() }
-                        .testTag("library_dev_credit_button"),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Code,
-                        contentDescription = "Developer Credit",
-                        tint = Color.White,
-                        modifier = Modifier.size(18.dp)
+                if (selectedTab == LibraryTab.DOWNLOADS) {
+                    GlassIconButton(
+                        icon = Icons.Default.Refresh,
+                        contentDescription = "Refresh Downloads",
+                        onClick = onRefreshDownloads
                     )
                 }
 
@@ -444,6 +575,7 @@ fun LibraryScreen(
             selectedTab = selectedTab,
             watchlistCount = watchlist.size,
             historyCount = watchHistory.size,
+            downloadsCount = downloadedItems.size,
             onTabSelected = { selectedTab = it }
         )
 
@@ -519,6 +651,32 @@ fun LibraryScreen(
                                     historyItem = historyItem,
                                     onResumeClick = { onResumeHistoryClick(historyItem) },
                                     onDeleteClick = { onDeleteHistoryItem(historyItem.subjectId) }
+                                )
+                            }
+                        }
+                    }
+                }
+
+                LibraryTab.DOWNLOADS -> {
+                    if (downloadedItems.isEmpty()) {
+                        DownloadsEmptyState(onExploreClick = onExploreClick)
+                    } else {
+                        LazyColumn(
+                            contentPadding = PaddingValues(
+                                start = 16.dp, end = 16.dp, bottom = 96.dp
+                            ),
+                            verticalArrangement = Arrangement.spacedBy(10.dp),
+                            modifier = Modifier.fillMaxSize()
+                        ) {
+                            items(
+                                count = downloadedItems.size,
+                                key = { i -> downloadedItems[i].file.absolutePath }
+                            ) { i ->
+                                val item = downloadedItems[i]
+                                DownloadedMovieRowCard(
+                                    item = item,
+                                    onPlayClick = { onPlayDownloadedItem(item) },
+                                    onDeleteClick = { onDeleteDownloadedFile(item.file) }
                                 )
                             }
                         }

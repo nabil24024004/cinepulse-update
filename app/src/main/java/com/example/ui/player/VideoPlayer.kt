@@ -1454,7 +1454,7 @@ fun VideoPlayer(
                                     )
                                     Spacer(modifier = Modifier.width(10.dp))
                                     Text(
-                                        text = if (isHindi) "🇮🇳 हिन्दी (Hindi)" else (caption.lanName ?: caption.lan ?: "Subtitle"),
+                                        text = if (isHindi) "Hindi (HI)" else (caption.lanName ?: caption.lan ?: "Subtitle"),
                                         color = if (isHindi) CinemaAmber else TextPrimary,
                                         fontWeight = if (isHindi || index == selectedCaptionIndex) FontWeight.Bold else FontWeight.Normal,
                                         modifier = Modifier.weight(1f)

@@ -60,6 +60,9 @@ interface WatchDao {
 
     @Query("DELETE FROM watchlist WHERE subjectId = :subjectId")
     suspend fun removeFromWatchlist(subjectId: String)
+
+    @Query("DELETE FROM watchlist")
+    suspend fun clearWatchlist()
 }
 
 @Database(

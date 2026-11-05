@@ -1,5 +1,8 @@
 # Proguard rules for CinePulse
 
+# Keep dead code shrinking and obfuscation while skipping RAM-heavy multi-pass AST optimizations
+-dontoptimize
+
 # Keep data models used by Moshi and Retrofit
 -keep class com.example.data.model.** { *; }
 -keepclassmembers class com.example.data.model.** { *; }

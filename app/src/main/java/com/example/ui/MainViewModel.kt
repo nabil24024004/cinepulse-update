@@ -21,10 +21,17 @@ import com.example.data.local.WatchHistoryEntity
 import com.example.data.local.WatchlistEntity
 import com.example.data.model.*
 import com.example.data.repository.MovieRepository
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
+import android.net.ConnectivityManager
+import android.net.Network
+import android.net.NetworkCapabilities
+import android.net.NetworkRequest
+import android.os.Environment
+import java.io.File
 
 private const val HTTP_USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 private const val REFERER_HEADER = "https://moviebox.ph/"
@@ -33,8 +40,18 @@ enum class AppTab {
     HOME,
     CATALOG,
     SEARCH,
-    LIBRARY
+    LIBRARY,
+    SETTINGS
 }
+
+data class DownloadedMediaItem(
+    val file: java.io.File,
+    val title: String,
+    val resolution: String,
+    val sizeBytes: Long,
+    val lastModified: Long,
+    val uriString: String
+)
 
 enum class CatalogType(val label: String) {
     MOVIES("Movies"),
@@ -94,6 +111,42 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     // Navigation state
     private val _currentTab = MutableStateFlow(AppTab.HOME)
     val currentTab: StateFlow<AppTab> = _currentTab.asStateFlow()
+
+    private val prefs = application.getSharedPreferences("cinepulse_prefs", Context.MODE_PRIVATE)
+
+    private val _isGetStartedDismissed = MutableStateFlow(prefs.getBoolean("get_started_dismissed", false))
+    val isGetStartedDismissed: StateFlow<Boolean> = _isGetStartedDismissed.asStateFlow()
+
+    private val _isNetworkAvailable = MutableStateFlow(true)
+    val isNetworkAvailable: StateFlow<Boolean> = _isNetworkAvailable.asStateFlow()
+
+    private val _downloadedItems = MutableStateFlow<List<DownloadedMediaItem>>(emptyList())
+    val downloadedItems: StateFlow<List<DownloadedMediaItem>> = _downloadedItems.asStateFlow()
+
+    init {
+        val cm = application.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
+        if (cm != null) {
+            val isConnected = cm.activeNetwork?.let { nw ->
+                cm.getNetworkCapabilities(nw)?.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+            } ?: false
+            _isNetworkAvailable.value = isConnected
+
+            val request = NetworkRequest.Builder()
+                .addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+                .build()
+            try {
+                cm.registerNetworkCallback(request, object : ConnectivityManager.NetworkCallback() {
+                    override fun onAvailable(network: Network) {
+                        _isNetworkAvailable.value = true
+                    }
+                    override fun onLost(network: Network) {
+                        _isNetworkAvailable.value = false
+                    }
+                })
+            } catch (_: Exception) {}
+        }
+        refreshDownloads()
+    }
 
     // Home state primed with disk/memory cache for instant 0ms load
     private val _homeState = MutableStateFlow(
@@ -580,6 +633,92 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             repository.clearHistory()
         }
     }
+
+    fun clearAllWatchlist() {
+        viewModelScope.launch {
+            repository.clearWatchlist()
+        }
+    }
+
+    fun dismissGetStarted() {
+        prefs.edit().putBoolean("get_started_dismissed", true).apply()
+        _isGetStartedDismissed.value = true
+    }
+
+    fun showGetStarted() {
+        prefs.edit().putBoolean("get_started_dismissed", false).apply()
+        _isGetStartedDismissed.value = false
+    }
+
+    fun refreshDownloads() {
+        viewModelScope.launch(Dispatchers.IO) {
+            val list = mutableListOf<DownloadedMediaItem>()
+            val candidates = listOf(
+                File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), "CinePulse"),
+                Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
+            )
+            for (dir in candidates) {
+                if (dir.exists() && dir.isDirectory) {
+                    val files = dir.listFiles { f ->
+                        f.isFile && (f.name.endsWith(".mp4", ignoreCase = true) || f.name.endsWith(".m3u8", ignoreCase = true))
+                    } ?: emptyArray()
+                    for (f in files) {
+                        if (list.none { it.file.absolutePath == f.absolutePath }) {
+                            val nameWithoutExt = f.nameWithoutExtension
+                            val resolution = when {
+                                nameWithoutExt.contains("1080", ignoreCase = true) -> "1080p"
+                                nameWithoutExt.contains("720", ignoreCase = true) -> "720p"
+                                nameWithoutExt.contains("480", ignoreCase = true) -> "480p"
+                                else -> "HD"
+                            }
+                            val cleanTitle = nameWithoutExt
+                                .replace(Regex("_(1080p|720p|480p|HD)$", RegexOption.IGNORE_CASE), "")
+                                .replace("_", " ")
+                            list.add(
+                                DownloadedMediaItem(
+                                    file = f,
+                                    title = cleanTitle,
+                                    resolution = resolution,
+                                    sizeBytes = f.length(),
+                                    lastModified = f.lastModified(),
+                                    uriString = f.toURI().toString()
+                                )
+                            )
+                        }
+                    }
+                }
+            }
+            list.sortByDescending { it.lastModified }
+            _downloadedItems.value = list
+        }
+    }
+
+    fun deleteDownloadedFile(file: File) {
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                file.delete()
+            } catch (_: Exception) {}
+            refreshDownloads()
+        }
+    }
+
+    fun playDownloadedItem(item: DownloadedMediaItem) {
+        val streamSource = StreamSource(
+            format = if (item.file.name.endsWith(".m3u8", ignoreCase = true)) "m3u8" else "mp4",
+            resolution = item.resolution,
+            rawSize = "${item.sizeBytes / (1024 * 1024)} MB",
+            url = item.file.absolutePath
+        )
+        _detailPlayerState.value = DetailPlayerUiState(
+            slug = "local_${item.file.name}",
+            subjectId = "local_${item.file.name.hashCode()}",
+            title = item.title,
+            isPlaying = true,
+            streamResponse = StreamResponse(sources = listOf(streamSource)),
+            detail = null
+        )
+    }
+
 
     fun closePlayer() {
         playerInstance?.pause()

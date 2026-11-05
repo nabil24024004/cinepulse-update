@@ -41,14 +41,13 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.ui.*
-import com.example.ui.components.DevCreditDialog
 import com.example.ui.screens.catalog.CatalogScreen
 import com.example.ui.screens.detail.DetailScreen
 import com.example.ui.screens.home.HomeScreen
 import com.example.ui.screens.library.LibraryScreen
 import com.example.ui.screens.search.SearchScreen
+import com.example.ui.screens.settings.SettingsScreen
 import com.example.ui.theme.*
-import com.example.util.DevCreditManager
 
 class MainActivity : ComponentActivity() {
     var isInPipMode by mutableStateOf(false)
@@ -132,26 +131,14 @@ fun MainApp(
 
     val watchHistory by viewModel.watchHistory.collectAsStateWithLifecycle()
     val watchlist by viewModel.watchlist.collectAsStateWithLifecycle()
+    val isNetworkAvailable by viewModel.isNetworkAvailable.collectAsStateWithLifecycle()
+    val isGetStartedDismissed by viewModel.isGetStartedDismissed.collectAsStateWithLifecycle()
+    val downloadedItems by viewModel.downloadedItems.collectAsStateWithLifecycle()
 
     val isDetailOpen = detailState.slug != null
     val isFullscreenPlaying = isLandscape && detailState.isPlaying
 
     val exoPlayer = remember(context) { viewModel.getPlayer(context) }
-
-    // Developer credit dialog on app start with 7-day snooze capability (hidden in PiP mode)
-    var showDevCreditDialog by remember {
-        mutableStateOf(!isInPipMode && DevCreditManager.shouldShowDialog(context))
-    }
-
-    if (showDevCreditDialog && !isInPipMode) {
-        DevCreditDialog(
-            onDismiss = { showDevCreditDialog = false },
-            onSnooze7Days = {
-                DevCreditManager.snoozeFor7Days(context)
-                showDevCreditDialog = false
-            }
-        )
-    }
 
     // Handle back button: In landscape, exit fullscreen back to portrait first
     BackHandler(enabled = !isInPipMode && (isLandscape || isDetailOpen || currentTab != AppTab.HOME)) {
@@ -228,6 +215,15 @@ fun MainApp(
                                 testTag = "nav_library",
                                 modifier = Modifier.weight(1f)
                             )
+
+                            LiquidGlassNavItem(
+                                selected = currentTab == AppTab.SETTINGS,
+                                onClick = { viewModel.selectTab(AppTab.SETTINGS) },
+                                icon = if (currentTab == AppTab.SETTINGS) Icons.Filled.Settings else Icons.Outlined.Settings,
+                                label = "Settings",
+                                testTag = "nav_settings",
+                                modifier = Modifier.weight(1f)
+                            )
                         }
                     }
                 }
@@ -281,6 +277,12 @@ fun MainApp(
                         HomeScreen(
                             uiState = homeState,
                             watchHistory = watchHistory,
+                            isOffline = !isNetworkAvailable,
+                            isGetStartedDismissed = isGetStartedDismissed,
+                            onDismissGetStarted = { viewModel.dismissGetStarted() },
+                            onExploreClick = { viewModel.selectTab(AppTab.CATALOG) },
+                            onLibraryClick = { viewModel.selectTab(AppTab.LIBRARY) },
+                            onOpenDownloads = { viewModel.selectTab(AppTab.LIBRARY) },
                             onMovieClick = { movie ->
                                 viewModel.openDetail(movie.safeSlug, movie.subjectId, movie.safeName, movie.type)
                             },
@@ -334,6 +336,7 @@ fun MainApp(
                         LibraryScreen(
                             watchlist = watchlist,
                             watchHistory = watchHistory,
+                            downloadedItems = downloadedItems,
                             onMovieClick = { movie ->
                                 viewModel.openDetail(movie.safeSlug, movie.subjectId, movie.safeName, movie.type)
                             },
@@ -346,7 +349,22 @@ fun MainApp(
                             },
                             onClearHistory = { viewModel.clearAllHistory() },
                             onExploreClick = { viewModel.selectTab(AppTab.HOME) },
-                            onOpenDevCredit = { showDevCreditDialog = true }
+                            onPlayDownloadedItem = { item -> viewModel.playDownloadedItem(item) },
+                            onDeleteDownloadedFile = { file -> viewModel.deleteDownloadedFile(file) },
+                            onRefreshDownloads = { viewModel.refreshDownloads() }
+                        )
+                    }
+
+                    AppTab.SETTINGS -> {
+                        SettingsScreen(
+                            onBackClick = { viewModel.selectTab(AppTab.HOME) },
+                            onClearHistory = { viewModel.clearAllHistory() },
+                            onClearWatchlist = { viewModel.clearAllWatchlist() },
+                            onOpenDownloads = { viewModel.selectTab(AppTab.LIBRARY) },
+                            onShowGetStarted = {
+                                viewModel.showGetStarted()
+                                viewModel.selectTab(AppTab.HOME)
+                            }
                         )
                     }
                 }

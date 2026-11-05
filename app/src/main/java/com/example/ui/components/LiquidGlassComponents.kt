@@ -10,14 +10,18 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -47,8 +51,22 @@ import com.example.ui.theme.LiquidGlassSheenBrush
 import com.example.ui.theme.LiquidGlassSurface
 import com.example.ui.theme.LiquidGlassSurfaceGradient
 import com.example.ui.theme.PureWhite
+import com.example.ui.theme.SolidGlassBorderBrush
+import com.example.ui.theme.SolidGlassCardBg
+import com.example.ui.theme.SolidGlassCardGradient
+import com.example.ui.theme.SolidGlassContact
+import com.example.ui.theme.SolidGlassControlBg
+import com.example.ui.theme.SolidGlassEdge
+import com.example.ui.theme.SolidGlassInner
+import com.example.ui.theme.SolidGlassPanelBg
+import com.example.ui.theme.SolidGlassPanelGradient
+import com.example.ui.theme.SolidGlassPopoverBg
+import com.example.ui.theme.SolidGlassRim
+import com.example.ui.theme.SolidGlassShade
+import com.example.ui.theme.TextMuted
 import com.example.ui.theme.TextPrimary
 import com.example.ui.theme.TextSecondary
+import androidx.compose.ui.draw.shadow
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Shared spring physics for fluid Apple iOS dynamics
@@ -433,3 +451,451 @@ fun GlassIconButton(
         )
     }
 }
+
+// ═════════════════════════════════════════════════════════════════════════════
+// Solid Glass Components (deeplethe/solid-glass design language)
+// Tactility · Precision · Physicality · Materiality
+// ═════════════════════════════════════════════════════════════════════════════
+
+@Composable
+fun SolidGlassCard(
+    modifier: Modifier = Modifier,
+    cornerRadius: Dp = 20.dp,
+    onClick: (() -> Unit)? = null,
+    content: @Composable () -> Unit
+) {
+    val shape = RoundedCornerShape(cornerRadius)
+    val interactionSource = remember { MutableInteractionSource() }
+    val isPressed by interactionSource.collectIsPressedAsState()
+    val scale by animateFloatAsState(
+        targetValue = if (isPressed && onClick != null) 0.96f else 1f,
+        animationSpec = GlassSpringSpec,
+        label = "SolidGlassCard_scale"
+    )
+
+    Box(
+        modifier = modifier
+            .scale(scale)
+            .shadow(
+                elevation = 14.dp,
+                shape = shape,
+                ambientColor = SolidGlassShade,
+                spotColor = SolidGlassShade
+            )
+            .clip(shape)
+            .background(SolidGlassCardGradient, shape)
+            .border(
+                width = 1.dp,
+                brush = SolidGlassBorderBrush,
+                shape = shape
+            )
+            .then(
+                if (onClick != null) {
+                    Modifier.clickable(
+                        interactionSource = interactionSource,
+                        indication = null,
+                        onClick = onClick
+                    )
+                } else Modifier
+            )
+    ) {
+        content()
+
+        // Line of light along top edge
+        Box(
+            modifier = Modifier
+                .matchParentSize()
+                .background(
+                    Brush.verticalGradient(
+                        0f to Color.White.copy(alpha = 0.14f),
+                        0.08f to Color.White.copy(alpha = 0.02f),
+                        0.25f to Color.Transparent
+                    )
+                )
+        )
+    }
+}
+
+@Composable
+fun SolidGlassPanel(
+    modifier: Modifier = Modifier,
+    cornerRadius: Dp = 16.dp,
+    content: @Composable () -> Unit
+) {
+    val shape = RoundedCornerShape(cornerRadius)
+
+    Box(
+        modifier = modifier
+            .clip(shape)
+            .background(SolidGlassPanelGradient, shape)
+            .border(
+                width = 0.8.dp,
+                brush = Brush.verticalGradient(
+                    listOf(
+                        SolidGlassRim.copy(alpha = 0.25f),
+                        SolidGlassEdge.copy(alpha = 0.15f),
+                        Color.Transparent
+                    )
+                ),
+                shape = shape
+            )
+    ) {
+        content()
+    }
+}
+
+@Composable
+fun SolidGlassPopover(
+    modifier: Modifier = Modifier,
+    cornerRadius: Dp = 24.dp,
+    content: @Composable () -> Unit
+) {
+    val shape = RoundedCornerShape(cornerRadius)
+
+    Box(
+        modifier = modifier
+            .shadow(
+                elevation = 28.dp,
+                shape = shape,
+                ambientColor = Color.Black,
+                spotColor = Color.Black
+            )
+            .clip(shape)
+            .background(SolidGlassPopoverBg, shape)
+            .border(
+                width = 1.dp,
+                brush = SolidGlassBorderBrush,
+                shape = shape
+            )
+    ) {
+        content()
+    }
+}
+
+@Composable
+fun SolidGlassButton(
+    text: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    leadingIcon: ImageVector? = null,
+    enabled: Boolean = true
+) {
+    val interactionSource = remember { MutableInteractionSource() }
+    val isPressed by interactionSource.collectIsPressedAsState()
+    val scale by animateFloatAsState(
+        targetValue = if (isPressed) 0.94f else 1f,
+        animationSpec = GlassSpringSpec,
+        label = "SolidGlassButton_scale"
+    )
+
+    val shape = RoundedCornerShape(999.dp)
+    val buttonBrush = if (enabled) {
+        Brush.horizontalGradient(BrandButtonGradient)
+    } else {
+        Brush.horizontalGradient(listOf(Color(0x40EE1E50), Color(0x20EE1E50)))
+    }
+
+    Box(
+        contentAlignment = Alignment.Center,
+        modifier = modifier
+            .height(44.dp)
+            .scale(scale)
+            .shadow(elevation = 12.dp, shape = shape, spotColor = Color(0x66EE1E50))
+            .clip(shape)
+            .background(buttonBrush, shape)
+            .border(
+                width = 1.dp,
+                brush = Brush.verticalGradient(
+                    listOf(Color(0x80FFFFFF), Color(0x20FFFFFF), Color(0x00FFFFFF))
+                ),
+                shape = shape
+            )
+            .clickable(
+                interactionSource = interactionSource,
+                indication = null,
+                enabled = enabled,
+                onClick = onClick
+            )
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.Center,
+            modifier = Modifier.padding(horizontal = 20.dp)
+        ) {
+            if (leadingIcon != null) {
+                Icon(
+                    imageVector = leadingIcon,
+                    contentDescription = null,
+                    tint = PureWhite,
+                    modifier = Modifier.size(18.dp)
+                )
+                Spacer(modifier = Modifier.width(6.dp))
+            }
+            Text(
+                text = text,
+                color = PureWhite,
+                fontWeight = FontWeight.Bold,
+                fontSize = 14.sp,
+                maxLines = 1,
+                softWrap = false,
+                style = TextStyle(
+                    shadow = Shadow(color = Color(0x66000000), blurRadius = 4f)
+                )
+            )
+        }
+    }
+}
+
+@Composable
+fun SolidGlassSecondaryButton(
+    text: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    leadingIcon: ImageVector? = null
+) {
+    val interactionSource = remember { MutableInteractionSource() }
+    val isPressed by interactionSource.collectIsPressedAsState()
+    val scale by animateFloatAsState(
+        targetValue = if (isPressed) 0.94f else 1f,
+        animationSpec = GlassSpringSpec,
+        label = "SolidGlassSecondaryButton_scale"
+    )
+
+    val shape = RoundedCornerShape(999.dp)
+
+    Box(
+        contentAlignment = Alignment.Center,
+        modifier = modifier
+            .height(44.dp)
+            .scale(scale)
+            .clip(shape)
+            .background(SolidGlassControlBg, shape)
+            .border(
+                width = 1.dp,
+                brush = SolidGlassBorderBrush,
+                shape = shape
+            )
+            .clickable(
+                interactionSource = interactionSource,
+                indication = null,
+                onClick = onClick
+            )
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.Center,
+            modifier = Modifier.padding(horizontal = 18.dp)
+        ) {
+            if (leadingIcon != null) {
+                Icon(
+                    imageVector = leadingIcon,
+                    contentDescription = null,
+                    tint = PureWhite,
+                    modifier = Modifier.size(17.dp)
+                )
+                Spacer(modifier = Modifier.width(6.dp))
+            }
+            Text(
+                text = text,
+                color = PureWhite,
+                fontWeight = FontWeight.SemiBold,
+                fontSize = 13.5.sp,
+                maxLines = 1,
+                softWrap = false
+            )
+        }
+    }
+}
+
+@Composable
+fun SolidGlassTag(
+    text: String,
+    modifier: Modifier = Modifier,
+    textColor: Color = PureWhite
+) {
+    val shape = RoundedCornerShape(6.dp)
+
+    Box(
+        contentAlignment = Alignment.Center,
+        modifier = modifier
+            .clip(shape)
+            .background(Color.White.copy(alpha = 0.08f), shape)
+            .border(
+                width = 0.8.dp,
+                color = Color.White.copy(alpha = 0.12f),
+                shape = shape
+            )
+            .padding(horizontal = 6.dp, vertical = 2.dp)
+    ) {
+        Text(
+            text = text,
+            color = textColor,
+            fontSize = 10.5.sp,
+            fontWeight = FontWeight.SemiBold,
+            maxLines = 1,
+            softWrap = false
+        )
+    }
+}
+
+@Composable
+fun SolidGlassOfflineBanner(
+    onOpenDownloads: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    SolidGlassCard(
+        cornerRadius = 16.dp,
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 6.dp)
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 14.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Row(
+                modifier = Modifier.weight(1f),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(34.dp)
+                        .clip(CircleShape)
+                        .background(Color.White.copy(alpha = 0.08f)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = androidx.compose.material.icons.Icons.Default.CloudOff,
+                        contentDescription = "Offline",
+                        tint = PureWhite,
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
+                Spacer(Modifier.width(12.dp))
+                Column {
+                    Text(
+                        text = "Offline Mode",
+                        color = PureWhite,
+                        fontSize = 13.5.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Text(
+                        text = "Viewing cached feed. Tap to play downloads.",
+                        color = TextSecondary,
+                        fontSize = 11.5.sp
+                    )
+                }
+            }
+            Spacer(Modifier.width(10.dp))
+            SolidGlassButton(
+                text = "Downloads",
+                onClick = onOpenDownloads,
+                modifier = Modifier.height(34.dp)
+            )
+        }
+    }
+}
+
+@Composable
+fun SolidGlassGetStartedBanner(
+    onExploreClick: () -> Unit,
+    onLibraryClick: () -> Unit,
+    onDismiss: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    SolidGlassCard(
+        cornerRadius = 20.dp,
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 8.dp)
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(18.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Box(
+                        modifier = Modifier
+                            .size(32.dp)
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(Brush.horizontalGradient(BrandButtonGradient)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = androidx.compose.material.icons.Icons.Default.PlayArrow,
+                            contentDescription = "Start",
+                            tint = PureWhite,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+                    Spacer(Modifier.width(10.dp))
+                    Column {
+                        Text(
+                            text = "Get Started with CinePulse",
+                            color = PureWhite,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 15.sp
+                        )
+                        Text(
+                            text = "Solid Glass Edition",
+                            color = BrandCoral,
+                            fontSize = 11.5.sp,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    }
+                }
+                Box(
+                    modifier = Modifier
+                        .size(28.dp)
+                        .clip(CircleShape)
+                        .background(Color.White.copy(alpha = 0.08f))
+                        .clickable(onClick = onDismiss),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = androidx.compose.material.icons.Icons.Default.Close,
+                        contentDescription = "Dismiss",
+                        tint = TextSecondary,
+                        modifier = Modifier.size(15.dp)
+                    )
+                }
+            }
+
+            Spacer(Modifier.height(10.dp))
+            Text(
+                text = "Enjoy high-speed streaming, real-time search, responsive video controls, offline playback, and a refined glass interface.",
+                color = TextSecondary,
+                fontSize = 12.5.sp,
+                lineHeight = 17.sp
+            )
+
+            Spacer(Modifier.height(14.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                SolidGlassButton(
+                    text = "Explore Browse",
+                    onClick = onExploreClick,
+                    modifier = Modifier.weight(1f).height(38.dp)
+                )
+                SolidGlassSecondaryButton(
+                    text = "My Library",
+                    onClick = onLibraryClick,
+                    modifier = Modifier.weight(1f).height(38.dp)
+                )
+            }
+        }
+    }
+}
+
+

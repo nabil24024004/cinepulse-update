@@ -531,7 +531,7 @@ fun DetailScreen(
                                                 .border(0.7.dp, LiquidGlassActiveBorderBrush, RoundedCornerShape(6.dp))
                                                 .padding(horizontal = 7.dp, vertical = 3.dp)
                                         ) {
-                                            Text("🇮🇳 हिन्दी", color = PureWhite, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                                            Text("Hindi (HI)", color = PureWhite, fontSize = 10.sp, fontWeight = FontWeight.Bold)
                                         }
                                     }
                                 }
@@ -683,7 +683,16 @@ fun DetailScreen(
                                      }
                                     Row(verticalAlignment = Alignment.CenterVertically) {
                                         if (isCurrentEp && uiState.isPlaying) {
-                                            Text("▶ Playing", color = LogoRed, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                                Icon(
+                                                    imageVector = Icons.Default.PlayArrow,
+                                                    contentDescription = null,
+                                                    tint = LogoRed,
+                                                    modifier = Modifier.size(14.dp)
+                                                )
+                                                Spacer(Modifier.width(2.dp))
+                                                Text("Playing", color = LogoRed, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                            }
                                             Spacer(Modifier.width(8.dp))
                                         }
                                         GlassIconButton(
