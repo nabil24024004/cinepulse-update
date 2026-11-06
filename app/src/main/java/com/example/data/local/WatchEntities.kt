@@ -1,6 +1,8 @@
 package com.example.data.local
 
 import androidx.room.*
+import androidx.room.migration.Migration
+import androidx.sqlite.db.SupportSQLiteDatabase
 import kotlinx.coroutines.flow.Flow
 
 @Entity(tableName = "watch_history")
@@ -30,6 +32,18 @@ data class WatchlistEntity(
     val genre: String?,
     val type: String?,
     val addedTimestamp: Long = System.currentTimeMillis()
+)
+
+@Entity(tableName = "download_records")
+data class DownloadRecordEntity(
+    @PrimaryKey val downloadId: Long,
+    val title: String,
+    val resolution: String,
+    val season: Int = 0,
+    val episode: Int = 0,
+    val uriString: String? = null,
+    val status: Int = 0,
+    val createdTimestamp: Long = System.currentTimeMillis()
 )
 
 @Dao
@@ -63,11 +77,23 @@ interface WatchDao {
 
     @Query("DELETE FROM watchlist")
     suspend fun clearWatchlist()
+
+    @Query("SELECT * FROM download_records ORDER BY createdTimestamp DESC")
+    fun getAllDownloadRecords(): Flow<List<DownloadRecordEntity>>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertDownloadRecord(entity: DownloadRecordEntity)
+
+    @Query("DELETE FROM download_records WHERE downloadId = :downloadId")
+    suspend fun deleteDownloadRecord(downloadId: Long)
+
+    @Query("DELETE FROM download_records")
+    suspend fun clearDownloadRecords()
 }
 
 @Database(
-    entities = [WatchHistoryEntity::class, WatchlistEntity::class],
-    version = 1,
+    entities = [WatchHistoryEntity::class, WatchlistEntity::class, DownloadRecordEntity::class],
+    version = 2,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -83,9 +109,30 @@ abstract class AppDatabase : RoomDatabase() {
                     context.applicationContext,
                     AppDatabase::class.java,
                     "cinepulse.db"
-                ).fallbackToDestructiveMigration().build()
+                )
+                    .addMigrations(MIGRATION_1_2)
+                    .fallbackToDestructiveMigration(dropAllTables = true)
+                    .build()
                 INSTANCE = instance
                 instance
+            }
+        }
+
+        private val MIGRATION_1_2 = object : Migration(1, 2) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """CREATE TABLE IF NOT EXISTS download_records (
+                        downloadId INTEGER NOT NULL,
+                        title TEXT NOT NULL,
+                        resolution TEXT NOT NULL,
+                        season INTEGER NOT NULL,
+                        episode INTEGER NOT NULL,
+                        uriString TEXT,
+                        status INTEGER NOT NULL DEFAULT 0,
+                        createdTimestamp INTEGER NOT NULL,
+                        PRIMARY KEY(downloadId)
+                    )""".trimIndent()
+                )
             }
         }
     }

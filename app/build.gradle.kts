@@ -1,5 +1,18 @@
 import com.google.gms.googleservices.GoogleServicesPlugin.MissingGoogleServicesStrategy
 
+val signingStoreFile = providers.gradleProperty("CINEPULSE_KEYSTORE_PATH")
+  .orElse(providers.environmentVariable("CINEPULSE_KEYSTORE_PATH"))
+  .orNull
+val signingStorePassword = providers.gradleProperty("CINEPULSE_STORE_PASSWORD")
+  .orElse(providers.environmentVariable("CINEPULSE_STORE_PASSWORD"))
+  .orNull
+val signingKeyAlias = providers.gradleProperty("CINEPULSE_KEY_ALIAS")
+  .orElse(providers.environmentVariable("CINEPULSE_KEY_ALIAS"))
+  .orNull
+val signingKeyPassword = providers.gradleProperty("CINEPULSE_KEY_PASSWORD")
+  .orElse(providers.environmentVariable("CINEPULSE_KEY_PASSWORD"))
+  .orNull
+
 plugins {
   alias(libs.plugins.android.application)
   alias(libs.plugins.kotlin.compose)
@@ -16,20 +29,24 @@ android {
     applicationId = "com.devzar.cinepulse"
     minSdk = 24
     targetSdk = 35
-    versionCode = 2
-    versionName = "1.0.2"
+    versionCode = 230
+    versionName = "2.3.0"
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
   }
 
   signingConfigs {
-    create("release") {
-      storeFile = file("${rootDir}/release.keystore")
-      storePassword = "cinepulse"
-      keyAlias = "cinepulse"
-      keyPassword = "cinepulse"
-      enableV1Signing = true
-      enableV2Signing = true
+    if (!signingStoreFile.isNullOrBlank() && !signingStorePassword.isNullOrBlank() &&
+      !signingKeyAlias.isNullOrBlank() && !signingKeyPassword.isNullOrBlank()
+    ) {
+      create("release") {
+        storeFile = file(signingStoreFile!!)
+        storePassword = signingStorePassword
+        keyAlias = signingKeyAlias
+        keyPassword = signingKeyPassword
+        enableV1Signing = true
+        enableV2Signing = true
+      }
     }
   }
 
@@ -39,10 +56,7 @@ android {
       isMinifyEnabled = true
       isShrinkResources = true
       proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
-      signingConfig = signingConfigs.getByName("release")
-    }
-    debug {
-      signingConfig = signingConfigs.getByName("release")
+      signingConfig = signingConfigs.findByName("release")
     }
   }
   compileOptions {

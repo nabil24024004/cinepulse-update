@@ -48,7 +48,9 @@ interface MovieApiService {
     suspend fun getAnimation(
         @Query("page") page: Int = 1,
         @Query("sort") sort: String? = null,
-        @Query("genre") genre: String? = null
+        @Query("genre") genre: String? = null,
+        @Query("country") country: String? = null,
+        @Query("year") year: String? = null
     ): CatalogResponse
 
     @GET("search")

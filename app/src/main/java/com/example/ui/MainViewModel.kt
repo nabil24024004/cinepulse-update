@@ -5,7 +5,6 @@ import android.content.Context
 import androidx.annotation.OptIn
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
-import androidx.media3.common.MediaItem
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.DefaultDataSource
 import androidx.media3.datasource.DefaultHttpDataSource
@@ -21,17 +20,21 @@ import com.example.data.local.WatchHistoryEntity
 import com.example.data.local.WatchlistEntity
 import com.example.data.model.*
 import com.example.data.repository.MovieRepository
+import com.example.util.StreamTokenManager
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
+import com.example.data.local.DownloadRecordEntity
 import android.net.ConnectivityManager
 import android.net.Network
 import android.net.NetworkCapabilities
 import android.net.NetworkRequest
-import android.os.Environment
-import java.io.File
+import android.app.DownloadManager
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 
 private const val HTTP_USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 private const val REFERER_HEADER = "https://moviebox.ph/"
@@ -45,12 +48,13 @@ enum class AppTab {
 }
 
 data class DownloadedMediaItem(
-    val file: java.io.File,
+    val downloadId: Long,
     val title: String,
     val resolution: String,
     val sizeBytes: Long,
     val lastModified: Long,
-    val uriString: String
+    val uriString: String,
+    val status: Int = DownloadManager.STATUS_SUCCESSFUL
 )
 
 enum class CatalogType(val label: String) {
@@ -81,7 +85,52 @@ data class SearchUiState(
     val query: String = "",
     val suggestions: List<String> = emptyList(),
     val results: List<MovieItem> = emptyList(),
+    val selectedType: String = "All",
+    val selectedGenre: String = "All",
+    val selectedYear: String = "All",
+    val selectedCountry: String = "All",
+    val searchHistory: List<String> = emptyList(),
     val isSearching: Boolean = false,
+    val errorMessage: String? = null
+) {
+    val filteredResults: List<MovieItem>
+        get() = results.filter { movie ->
+            val typeMatches = when (selectedType) {
+                "Movie" -> movie.type.equals("movie", ignoreCase = true)
+                "Series" -> movie.isTvSeries
+                "Anime" -> movie.type.equals("anime", ignoreCase = true) ||
+                    movie.genre.orEmpty().contains("anime", ignoreCase = true)
+                "Animation" -> movie.type.equals("animation", ignoreCase = true) ||
+                    movie.genre.orEmpty().contains("animation", ignoreCase = true)
+                else -> true
+            }
+            val genreMatches = selectedGenre == "All" || movie.genre.orEmpty()
+                .split(',', '/', '|')
+                .any { it.trim().equals(selectedGenre, ignoreCase = true) } ||
+                movie.genre.orEmpty().contains(selectedGenre, ignoreCase = true)
+            val yearMatches = selectedYear == "All" || movie.year == selectedYear
+            val countryMatches = when (selectedCountry) {
+                "All" -> true
+                "United States" -> movie.country.orEmpty().contains("united states", ignoreCase = true) ||
+                    movie.country.orEmpty().contains("usa", ignoreCase = true) ||
+                    movie.country.orEmpty().equals("us", ignoreCase = true)
+                else -> movie.country.orEmpty().contains(selectedCountry, ignoreCase = true)
+            }
+            typeMatches && genreMatches && yearMatches && countryMatches
+        }
+
+    val hasActiveFilters: Boolean
+        get() = selectedType != "All" || selectedGenre != "All" ||
+            selectedYear != "All" || selectedCountry != "All"
+}
+
+data class ActorFilmographyUiState(
+    val name: String? = null,
+    val avatarUrl: String? = null,
+    val items: List<MovieItem> = emptyList(),
+    val page: Int = 0,
+    val hasMore: Boolean = false,
+    val isLoading: Boolean = false,
     val errorMessage: String? = null
 )
 
@@ -116,6 +165,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     private val _isGetStartedDismissed = MutableStateFlow(prefs.getBoolean("get_started_dismissed", false))
     val isGetStartedDismissed: StateFlow<Boolean> = _isGetStartedDismissed.asStateFlow()
+
+    private val _defaultQuality = MutableStateFlow(prefs.getString("default_quality", "Auto") ?: "Auto")
+    val defaultQuality: StateFlow<String> = _defaultQuality.asStateFlow()
+
+    private val _autoplayNext = MutableStateFlow(prefs.getBoolean("autoplay_next", true))
+    val autoplayNext: StateFlow<Boolean> = _autoplayNext.asStateFlow()
 
     private val _isNetworkAvailable = MutableStateFlow(true)
     val isNetworkAvailable: StateFlow<Boolean> = _isNetworkAvailable.asStateFlow()
@@ -170,9 +225,17 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     val catalogState: StateFlow<CatalogUiState> = _catalogState.asStateFlow()
 
     // Search state
-    private val _searchState = MutableStateFlow(SearchUiState())
+    private val _searchState = MutableStateFlow(
+        SearchUiState(searchHistory = loadSearchHistory())
+    )
     val searchState: StateFlow<SearchUiState> = _searchState.asStateFlow()
     private var searchJob: Job? = null
+    private var searchGeneration = 0L
+
+    private val _actorState = MutableStateFlow(ActorFilmographyUiState())
+    val actorState: StateFlow<ActorFilmographyUiState> = _actorState.asStateFlow()
+    private var actorJob: Job? = null
+    private var actorGeneration = 0L
 
     // Detail & Player state
     private val _detailPlayerState = MutableStateFlow(DetailPlayerUiState())
@@ -187,8 +250,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     // Single persistent ExoPlayer instance surviving screen rotation
     private var playerInstance: ExoPlayer? = null
+    private var detailJob: Job? = null
+    private var streamJob: Job? = null
+    private var watchlistJob: Job? = null
+    private var detailGeneration = 0L
 
     init {
+        StreamTokenManager.initialize(repository)
         loadHomeFeed()
         loadCatalog(reset = true)
     }
@@ -206,7 +274,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         "Accept-Encoding" to "identity" // CRITICAL: Prevents CDN proxy from gzip-compressing MP4 containers which causes parsing container malformed
                     )
                 )
-                .setAllowCrossProtocolRedirects(true)
+                .setAllowCrossProtocolRedirects(false)
                 .setConnectTimeoutMs(25000)
                 .setReadTimeoutMs(35000)
 
@@ -371,8 +439,184 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    private fun loadSearchHistory(): List<String> {
+        return prefs.getString("search_history", "")
+            .orEmpty()
+            .split('\u001F')
+            .map(String::trim)
+            .filter(String::isNotBlank)
+            .distinct()
+            .take(12)
+    }
+
+    private fun saveSearchHistory(query: String) {
+        val updated = listOf(query) + _searchState.value.searchHistory.filterNot { it.equals(query, ignoreCase = true) }
+        val limited = updated.take(12)
+        prefs.edit().putString("search_history", limited.joinToString("\u001F")).apply()
+        _searchState.update { it.copy(searchHistory = limited) }
+    }
+
+    fun clearSearchHistory() {
+        prefs.edit().remove("search_history").apply()
+        _searchState.update { it.copy(searchHistory = emptyList()) }
+    }
+
+    fun setSearchType(type: String) {
+        _searchState.update { it.copy(selectedType = type) }
+        if (_searchState.value.query.isBlank()) refreshFilterOnlySearch()
+    }
+
+    fun setSearchGenre(genre: String) {
+        _searchState.update { it.copy(selectedGenre = genre) }
+        if (_searchState.value.query.isBlank()) refreshFilterOnlySearch()
+    }
+
+    fun setSearchYear(year: String) {
+        _searchState.update { it.copy(selectedYear = year) }
+        if (_searchState.value.query.isBlank()) refreshFilterOnlySearch()
+    }
+
+    fun setSearchCountry(country: String) {
+        _searchState.update { it.copy(selectedCountry = country) }
+        if (_searchState.value.query.isBlank()) refreshFilterOnlySearch()
+    }
+
+    fun clearSearchFilters() {
+        searchJob?.cancel()
+        searchGeneration++
+        _searchState.update {
+            it.copy(
+                selectedType = "All",
+                selectedGenre = "All",
+                selectedYear = "All",
+                selectedCountry = "All",
+                results = if (it.query.isBlank()) emptyList() else it.results,
+                isSearching = false,
+                errorMessage = null
+            )
+        }
+    }
+
+    private fun refreshFilterOnlySearch() {
+        val state = _searchState.value
+        if (state.query.isNotBlank()) return
+
+        searchGeneration++
+        val generation = searchGeneration
+        searchJob?.cancel()
+        if (!state.hasActiveFilters) {
+            _searchState.update { it.copy(results = emptyList(), isSearching = false, errorMessage = null) }
+            return
+        }
+
+        val genre = state.selectedGenre.takeUnless { it == "All" }
+        val country = state.selectedCountry.takeUnless { it == "All" }
+        val year = state.selectedYear.takeUnless { it == "All" }
+        _searchState.update { it.copy(results = emptyList(), isSearching = true, errorMessage = null) }
+
+        searchJob = viewModelScope.launch {
+            val responses = coroutineScope {
+                when (state.selectedType) {
+                    "Movie" -> listOf(async { repository.getMovies(1, "latest", genre, country, year) })
+                    "Series" -> listOf(async { repository.getTvSeries(1, "latest", genre, country, year) })
+                    "Anime", "Animation" -> listOf(async { repository.getAnimation(1, "latest", genre) })
+                    else -> listOf(
+                        async { repository.getMovies(1, "latest", genre, country, year) },
+                        async { repository.getTvSeries(1, "latest", genre, country, year) },
+                        async { repository.getAnimation(1, "latest", genre) }
+                    )
+                }.awaitAll()
+            }
+            if (generation != searchGeneration) return@launch
+            val items = responses.flatMap { it.getOrNull()?.items.orEmpty() }
+                .distinctBy { "${it.safeSlug}_${it.subjectId}" }
+            _searchState.update {
+                it.copy(
+                    results = items,
+                    isSearching = false,
+                    errorMessage = if (items.isEmpty()) null else it.errorMessage
+                )
+            }
+        }
+    }
+
+    fun openActor(name: String, avatarUrl: String? = null) {
+        val actorName = name.trim()
+        if (actorName.isBlank()) return
+        actorGeneration++
+        val generation = actorGeneration
+        actorJob?.cancel()
+        _actorState.value = ActorFilmographyUiState(
+            name = actorName,
+            avatarUrl = avatarUrl,
+            isLoading = true
+        )
+        actorJob = viewModelScope.launch {
+            repository.search(actorName, page = 1)
+                .onSuccess { response ->
+                    if (generation != actorGeneration) return@onSuccess
+                    _actorState.value = ActorFilmographyUiState(
+                        name = actorName,
+                        avatarUrl = avatarUrl,
+                        items = response.items,
+                        page = response.page ?: 1,
+                        hasMore = response.hasMore ?: response.items.isNotEmpty(),
+                        isLoading = false
+                    )
+                }
+                .onFailure { error ->
+                    if (generation == actorGeneration) {
+                        _actorState.value = ActorFilmographyUiState(
+                            name = actorName,
+                            avatarUrl = avatarUrl,
+                            isLoading = false,
+                            errorMessage = error.localizedMessage ?: "Unable to load this actor's titles."
+                        )
+                    }
+                }
+        }
+    }
+
+    fun loadMoreActorTitles() {
+        val current = _actorState.value
+        val actorName = current.name ?: return
+        if (current.isLoading || !current.hasMore) return
+        val generation = actorGeneration
+        val nextPage = current.page + 1
+        actorJob?.cancel()
+        _actorState.update { it.copy(isLoading = true, errorMessage = null) }
+        actorJob = viewModelScope.launch {
+            repository.search(actorName, page = nextPage)
+                .onSuccess { response ->
+                    if (generation != actorGeneration) return@onSuccess
+                    _actorState.update {
+                        it.copy(
+                            items = (it.items + response.items).distinctBy { movie -> "${movie.safeSlug}_${movie.subjectId}" },
+                            page = response.page ?: nextPage,
+                            hasMore = response.hasMore ?: response.items.isNotEmpty(),
+                            isLoading = false
+                        )
+                    }
+                }
+                .onFailure { error ->
+                    if (generation == actorGeneration) {
+                        _actorState.update {
+                            it.copy(isLoading = false, errorMessage = error.localizedMessage ?: "Unable to load more titles.")
+                        }
+                    }
+                }
+        }
+    }
+
+    fun closeActor() {
+        actorGeneration++
+        actorJob?.cancel()
+        _actorState.value = ActorFilmographyUiState()
+    }
+
     fun onSearchQueryChanged(newQuery: String) {
         _searchState.update { it.copy(query = newQuery) }
+        val generation = ++searchGeneration
         searchJob?.cancel()
 
         if (newQuery.isBlank()) {
@@ -383,41 +627,63 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         searchJob = viewModelScope.launch {
             delay(350)
             repository.getSuggestions(newQuery).onSuccess { res ->
-                val titles = res.suggestions.mapNotNull { it.title }.filter { it.isNotBlank() }.distinct()
-                _searchState.update { it.copy(suggestions = titles) }
+                if (generation == searchGeneration) {
+                    val titles = res.suggestions.mapNotNull { it.title }.filter { it.isNotBlank() }.distinct()
+                    _searchState.update { it.copy(suggestions = titles) }
+                }
             }
-            performSearch(newQuery)
+            if (generation != searchGeneration) return@launch
+            _searchState.update { it.copy(isSearching = true, errorMessage = null) }
+            repository.search(query = newQuery.trim(), page = 1)
+                .onSuccess { res ->
+                    if (generation == searchGeneration) {
+                        _searchState.update {
+                            it.copy(isSearching = false, results = res.items, errorMessage = null)
+                        }
+                    }
+                }
+                .onFailure { error ->
+                    if (generation == searchGeneration) {
+                        _searchState.update {
+                            it.copy(isSearching = false, errorMessage = error.localizedMessage ?: "Search failed.")
+                        }
+                    }
+                }
         }
     }
 
     fun performSearch(queryToSearch: String) {
         val q = queryToSearch.trim()
         if (q.isBlank()) return
+        saveSearchHistory(q)
+        val generation = ++searchGeneration
         searchJob?.cancel()
-        viewModelScope.launch {
+        searchJob = viewModelScope.launch {
             _searchState.update { it.copy(query = q, isSearching = true, errorMessage = null) }
             repository.search(query = q, page = 1)
                 .onSuccess { res ->
-                    _searchState.update {
-                        it.copy(
-                            isSearching = false,
-                            results = res.items,
-                            errorMessage = null
-                        )
+                    if (generation == searchGeneration) {
+                        _searchState.update {
+                            it.copy(isSearching = false, results = res.items, errorMessage = null)
+                        }
                     }
                 }
                 .onFailure { error ->
-                    _searchState.update {
-                        it.copy(
-                            isSearching = false,
-                            errorMessage = error.localizedMessage ?: "Search failed."
-                        )
+                    if (generation == searchGeneration) {
+                        _searchState.update {
+                            it.copy(isSearching = false, errorMessage = error.localizedMessage ?: "Search failed.")
+                        }
                     }
                 }
         }
     }
 
     fun openDetail(slug: String, subjectId: String, title: String = "", initialType: String? = null) {
+        detailGeneration++
+        val generation = detailGeneration
+        detailJob?.cancel()
+        streamJob?.cancel()
+        watchlistJob?.cancel()
         val guessedSeries = initialType.equals("tv", ignoreCase = true) || initialType.equals("tv-series", ignoreCase = true)
         _detailPlayerState.value = DetailPlayerUiState(
             slug = slug,
@@ -430,14 +696,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         )
 
         // Observe watchlist
-        viewModelScope.launch {
+        watchlistJob = viewModelScope.launch {
             repository.isWatchlisted(subjectId).collectLatest { isWatchlisted ->
-                _detailPlayerState.update { it.copy(isWatchlisted = isWatchlisted) }
+                if (generation == detailGeneration && _detailPlayerState.value.subjectId == subjectId) {
+                    _detailPlayerState.update { it.copy(isWatchlisted = isWatchlisted) }
+                }
             }
         }
 
         // Fetch detail
-        viewModelScope.launch {
+        detailJob = viewModelScope.launch {
             val savedHistory = repository.getHistoryItem(subjectId)
             val prevPos = savedHistory?.positionMs ?: 0L
             val prevSe = savedHistory?.season ?: 1
@@ -445,6 +713,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
             repository.getDetail(slug)
                 .onSuccess { detailRes ->
+                    if (generation != detailGeneration) return@onSuccess
                     val subjectType = detailRes.data?.subject?.subjectType
                     val rawSeasons = detailRes.data?.resource?.seasons.orEmpty()
                     // CRITICAL: A title is a series ONLY if subjectType == 2 OR (subjectType != 1 && rawSeasons has se > 0 and maxEp > 0)
@@ -476,17 +745,22 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     viewModelScope.launch {
                         repository.getCaptions(subjectId, slug, season = actualSe, episode = actualEp, isSeries = isSeries)
                             .onSuccess { capRes ->
-                                val caps = capRes.captions.orEmpty()
-                                _detailPlayerState.update { it.copy(captions = caps) }
+                                if (generation == detailGeneration &&
+                                    _detailPlayerState.value.subjectId == subjectId &&
+                                    _detailPlayerState.value.selectedSeason == actualSe &&
+                                    _detailPlayerState.value.selectedEpisode == actualEp
+                                ) {
+                                    val caps = capRes.captions.orEmpty()
+                                    _detailPlayerState.update { it.copy(captions = caps) }
+                                }
                             }
                     }
                 }
                 .onFailure { error ->
-                    _detailPlayerState.update {
-                        it.copy(
-                            isLoadingDetail = false,
-                            streamError = error.localizedMessage
-                        )
+                    if (generation == detailGeneration) {
+                        _detailPlayerState.update {
+                            it.copy(isLoadingDetail = false, streamError = error.localizedMessage)
+                        }
                     }
                 }
         }
@@ -499,13 +773,24 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         episode: Int = 0,
         resumePositionMs: Long? = null
     ) {
-        viewModelScope.launch {
+        streamJob?.cancel()
+        val generation = detailGeneration
+        streamJob = viewModelScope.launch {
             val current = _detailPlayerState.value
             val isSeries = current.isSeries
 
             // For movies, Zar MovieBox API explicitly requires se=0, ep=0!
             val actualSe = if (isSeries) season.coerceAtLeast(1) else 0
             val actualEp = if (isSeries) episode.coerceAtLeast(1) else 0
+
+            StreamTokenManager.setActiveSession(
+                subjectId = subjectId,
+                slug = slug,
+                season = actualSe,
+                episode = actualEp,
+                isSeries = isSeries,
+                resolution = defaultQuality.value
+            )
 
             val initialPos = resumePositionMs ?: repository.getHistoryItem(subjectId)?.positionMs ?: 0L
 
@@ -522,13 +807,18 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 )
             }
 
-            // Fetch stream and captions in parallel
-            val streamResult = repository.getStream(subjectId, slug, actualSe, actualEp, isSeries = isSeries)
-            val captionsResult = repository.getCaptions(subjectId, slug, actualSe, actualEp, isSeries = isSeries)
+            val (streamResult, captionsResult) = coroutineScope {
+                val stream = async { repository.getStream(subjectId, slug, actualSe, actualEp, isSeries = isSeries) }
+                val captions = async { repository.getCaptions(subjectId, slug, actualSe, actualEp, isSeries = isSeries) }
+                stream.await() to captions.await()
+            }
+
+            if (generation != detailGeneration || _detailPlayerState.value.subjectId != subjectId) return@launch
 
             streamResult.onSuccess { streamRes ->
                 val caps = captionsResult.getOrNull()?.captions.orEmpty()
                 if (streamRes.sources.isNotEmpty()) {
+                    StreamTokenManager.updateActiveSources(streamRes.sources)
                     _detailPlayerState.update {
                         it.copy(
                             streamResponse = streamRes,
@@ -540,6 +830,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 } else {
                     _detailPlayerState.update {
                         it.copy(
+                            isPlaying = false,
                             streamResponse = streamRes,
                             captions = caps,
                             isLoadingStream = false,
@@ -550,6 +841,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             }.onFailure { err ->
                 _detailPlayerState.update {
                     it.copy(
+                        isPlaying = false,
+                        streamResponse = null,
                         isLoadingStream = false,
                         streamError = err.localizedMessage ?: "Failed to fetch stream link."
                     )
@@ -570,6 +863,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val slug = s.slug ?: return
         val subjectId = s.subjectId ?: return
         playItem(slug, subjectId, season, episode, resumePositionMs = 0L)
+    }
+
+    fun refreshCurrentStream(resumePositionMs: Long = 0L) {
+        val state = _detailPlayerState.value
+        val slug = state.slug ?: return
+        val subjectId = state.subjectId ?: return
+        playItem(slug, subjectId, state.selectedSeason, state.selectedEpisode, resumePositionMs)
     }
 
     fun saveProgress(posMs: Long, durMs: Long) {
@@ -645,6 +945,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         _isGetStartedDismissed.value = true
     }
 
+    fun setDefaultQuality(quality: String) {
+        prefs.edit().putString("default_quality", quality).apply()
+        _defaultQuality.value = quality
+    }
+
+    fun setAutoplayNext(enabled: Boolean) {
+        prefs.edit().putBoolean("autoplay_next", enabled).apply()
+        _autoplayNext.value = enabled
+    }
+
     fun showGetStarted() {
         prefs.edit().putBoolean("get_started_dismissed", false).apply()
         _isGetStartedDismissed.value = false
@@ -652,39 +962,38 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun refreshDownloads() {
         viewModelScope.launch(Dispatchers.IO) {
+            val downloadManager = getApplication<Application>().getSystemService(Context.DOWNLOAD_SERVICE) as? DownloadManager
+            val records = repository.downloadRecords.first()
             val list = mutableListOf<DownloadedMediaItem>()
-            val candidates = listOf(
-                File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), "CinePulse"),
-                Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
-            )
-            for (dir in candidates) {
-                if (dir.exists() && dir.isDirectory) {
-                    val files = dir.listFiles { f ->
-                        f.isFile && (f.name.endsWith(".mp4", ignoreCase = true) || f.name.endsWith(".m3u8", ignoreCase = true))
-                    } ?: emptyArray()
-                    for (f in files) {
-                        if (list.none { it.file.absolutePath == f.absolutePath }) {
-                            val nameWithoutExt = f.nameWithoutExtension
-                            val resolution = when {
-                                nameWithoutExt.contains("1080", ignoreCase = true) -> "1080p"
-                                nameWithoutExt.contains("720", ignoreCase = true) -> "720p"
-                                nameWithoutExt.contains("480", ignoreCase = true) -> "480p"
-                                else -> "HD"
-                            }
-                            val cleanTitle = nameWithoutExt
-                                .replace(Regex("_(1080p|720p|480p|HD)$", RegexOption.IGNORE_CASE), "")
-                                .replace("_", " ")
-                            list.add(
-                                DownloadedMediaItem(
-                                    file = f,
-                                    title = cleanTitle,
-                                    resolution = resolution,
-                                    sizeBytes = f.length(),
-                                    lastModified = f.lastModified(),
-                                    uriString = f.toURI().toString()
-                                )
+            if (downloadManager != null) {
+                for (record in records) {
+                    val query = DownloadManager.Query().setFilterById(record.downloadId)
+                    downloadManager.query(query)?.use { cursor ->
+                        if (!cursor.moveToFirst()) return@use
+                        val status = cursor.getInt(cursor.getColumnIndexOrThrow(DownloadManager.COLUMN_STATUS))
+                        val uri = downloadManager.getUriForDownloadedFile(record.downloadId)
+                        repository.saveDownloadRecord(
+                            record.copy(
+                                uriString = uri?.toString() ?: record.uriString,
+                                status = status
                             )
-                        }
+                        )
+                        if (status != DownloadManager.STATUS_SUCCESSFUL || uri == null) return@use
+                        val sizeIndex = cursor.getColumnIndex(DownloadManager.COLUMN_TOTAL_SIZE_BYTES)
+                        val timeIndex = cursor.getColumnIndex(DownloadManager.COLUMN_LAST_MODIFIED_TIMESTAMP)
+                        val size = if (sizeIndex >= 0) cursor.getLong(sizeIndex).coerceAtLeast(0L) else 0L
+                        val modified = if (timeIndex >= 0) cursor.getLong(timeIndex) else record.createdTimestamp
+                        list.add(
+                            DownloadedMediaItem(
+                                downloadId = record.downloadId,
+                                title = record.title,
+                                resolution = record.resolution,
+                                sizeBytes = size,
+                                lastModified = modified,
+                                uriString = uri.toString(),
+                                status = status
+                            )
+                        )
                     }
                 }
             }
@@ -693,25 +1002,43 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    fun deleteDownloadedFile(file: File) {
+    fun registerDownload(downloadId: Long, title: String, resolution: String, season: Int = 0, episode: Int = 0) {
+        viewModelScope.launch(Dispatchers.IO) {
+            repository.saveDownloadRecord(
+                DownloadRecordEntity(
+                    downloadId = downloadId,
+                    title = title,
+                    resolution = resolution,
+                    season = season,
+                    episode = episode,
+                    status = DownloadManager.STATUS_PENDING
+                )
+            )
+            refreshDownloads()
+        }
+    }
+
+    fun deleteDownloadedItem(item: DownloadedMediaItem) {
         viewModelScope.launch(Dispatchers.IO) {
             try {
-                file.delete()
+                val manager = getApplication<Application>().getSystemService(Context.DOWNLOAD_SERVICE) as? DownloadManager
+                manager?.remove(item.downloadId)
             } catch (_: Exception) {}
+            repository.deleteDownloadRecord(item.downloadId)
             refreshDownloads()
         }
     }
 
     fun playDownloadedItem(item: DownloadedMediaItem) {
         val streamSource = StreamSource(
-            format = if (item.file.name.endsWith(".m3u8", ignoreCase = true)) "m3u8" else "mp4",
+            format = "mp4",
             resolution = item.resolution,
             rawSize = "${item.sizeBytes / (1024 * 1024)} MB",
-            url = item.file.absolutePath
+            url = item.uriString
         )
         _detailPlayerState.value = DetailPlayerUiState(
-            slug = "local_${item.file.name}",
-            subjectId = "local_${item.file.name.hashCode()}",
+            slug = "local_${item.downloadId}",
+            subjectId = "local_${item.downloadId}",
             title = item.title,
             isPlaying = true,
             streamResponse = StreamResponse(sources = listOf(streamSource)),
@@ -721,20 +1048,36 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
 
     fun closePlayer() {
+        persistCurrentPlaybackProgress()
         playerInstance?.pause()
         playerInstance?.stop()
         _detailPlayerState.update { it.copy(isPlaying = false) }
     }
 
     fun closeDetail() {
+        detailGeneration++
+        detailJob?.cancel()
+        streamJob?.cancel()
+        watchlistJob?.cancel()
+        persistCurrentPlaybackProgress()
         playerInstance?.pause()
         playerInstance?.stop()
         _detailPlayerState.value = DetailPlayerUiState()
     }
 
     override fun onCleared() {
+        persistCurrentPlaybackProgress()
         super.onCleared()
         playerInstance?.release()
         playerInstance = null
+    }
+
+    private fun persistCurrentPlaybackProgress() {
+        val player = playerInstance ?: return
+        val positionMs = player.currentPosition
+        val durationMs = player.duration
+        if (positionMs > 0L && durationMs > 0L) {
+            saveProgress(positionMs, durationMs)
+        }
     }
 }

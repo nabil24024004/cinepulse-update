@@ -87,6 +87,15 @@ When submitting changes that touch network calls or storage, verify that you adh
 ./gradlew assembleRelease
 ```
 
+### Release Signing
+The release keystore is never stored in the repository. The release workflow restores it from protected repository secrets and passes these values to Gradle:
+- `CINEPULSE_KEYSTORE_BASE64`
+- `CINEPULSE_STORE_PASSWORD`
+- `CINEPULSE_KEY_ALIAS`
+- `CINEPULSE_KEY_PASSWORD`
+
+Local release builds can use the same names as environment variables or Gradle properties. Debug builds use the standard local debug signing configuration.
+
 ### Git Commit Guidelines
 - Use clear, descriptive imperative commit messages.
 - Do not use emojis in commit messages or pull request titles.

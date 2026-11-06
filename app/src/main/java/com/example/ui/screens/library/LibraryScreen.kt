@@ -17,6 +17,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -493,18 +494,20 @@ fun LibraryScreen(
     watchlist: List<WatchlistEntity>,
     watchHistory: List<WatchHistoryEntity>,
     downloadedItems: List<DownloadedMediaItem> = emptyList(),
+    onBackClick: () -> Unit,
     onMovieClick: (MovieItem) -> Unit,
     onResumeHistoryClick: (WatchHistoryEntity) -> Unit,
     onDeleteHistoryItem: (String) -> Unit,
     onClearHistory: () -> Unit,
     onExploreClick: () -> Unit,
     onPlayDownloadedItem: (DownloadedMediaItem) -> Unit = {},
-    onDeleteDownloadedFile: (java.io.File) -> Unit = {},
+    onDeleteDownloadedFile: (DownloadedMediaItem) -> Unit = {},
     onRefreshDownloads: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     var selectedTab by remember { mutableStateOf(LibraryTab.WATCHLIST) }
     var showClearHistoryDialog by remember { mutableStateOf(false) }
+    var pendingDownloadDelete by remember { mutableStateOf<DownloadedMediaItem?>(null) }
 
     Column(
         modifier = modifier
@@ -521,13 +524,21 @@ fun LibraryScreen(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
-            Text(
-                text = "My Library",
-                style = MaterialTheme.typography.headlineSmall.copy(
-                    fontWeight = FontWeight.ExtraBold,
-                    color = TextPrimary
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                GlassIconButton(
+                    icon = Icons.AutoMirrored.Filled.ArrowBack,
+                    contentDescription = "Back",
+                    onClick = onBackClick
                 )
-            )
+                Spacer(modifier = Modifier.width(10.dp))
+                Text(
+                    text = "My Library",
+                    style = MaterialTheme.typography.headlineSmall.copy(
+                        fontWeight = FontWeight.ExtraBold,
+                        color = TextPrimary
+                    )
+                )
+            }
 
             Row(verticalAlignment = Alignment.CenterVertically) {
                 if (selectedTab == LibraryTab.DOWNLOADS) {
@@ -670,13 +681,13 @@ fun LibraryScreen(
                         ) {
                             items(
                                 count = downloadedItems.size,
-                                key = { i -> downloadedItems[i].file.absolutePath }
+                                key = { i -> downloadedItems[i].downloadId }
                             ) { i ->
                                 val item = downloadedItems[i]
                                 DownloadedMovieRowCard(
                                     item = item,
                                     onPlayClick = { onPlayDownloadedItem(item) },
-                                    onDeleteClick = { onDeleteDownloadedFile(item.file) }
+                                    onDeleteClick = { pendingDownloadDelete = item }
                                 )
                             }
                         }
@@ -734,6 +745,29 @@ fun LibraryScreen(
             },
             dismissButton = {
                 TextButton(onClick = { showClearHistoryDialog = false }) {
+                    Text("Cancel", color = TextSecondary)
+                }
+            },
+            containerColor = CinemaDark,
+            shape = RoundedCornerShape(20.dp)
+        )
+    }
+
+    pendingDownloadDelete?.let { item ->
+        AlertDialog(
+            onDismissRequest = { pendingDownloadDelete = null },
+            title = { Text("Delete downloaded media?", fontWeight = FontWeight.Bold, color = TextPrimary) },
+            text = { Text("This removes ${item.title} from Downloads/CinePulse.", color = TextSecondary) },
+            confirmButton = {
+                TextButton(onClick = {
+                    onDeleteDownloadedFile(item)
+                    pendingDownloadDelete = null
+                }) {
+                    Text("Delete", color = CinemaRed)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { pendingDownloadDelete = null }) {
                     Text("Cancel", color = TextSecondary)
                 }
             },

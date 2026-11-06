@@ -4,14 +4,11 @@ import android.content.Context
 import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.automirrored.filled.OpenInNew
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -28,7 +25,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.ui.components.*
 import com.example.ui.theme.*
-import com.example.util.DevCreditManager
 
 @Composable
 fun SettingsScreen(
@@ -37,24 +33,16 @@ fun SettingsScreen(
     onClearWatchlist: () -> Unit,
     onOpenDownloads: () -> Unit,
     onShowGetStarted: () -> Unit,
+    defaultQuality: String = "Auto",
+    autoplayNext: Boolean = true,
+    onDefaultQualityChanged: (String) -> Unit = {},
+    onAutoplayNextChanged: (Boolean) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
-    var showInAppBrowser by remember { mutableStateOf(false) }
-    var browserUrl by remember { mutableStateOf(DevCreditManager.DEV_URL) }
-    var browserTitle by remember { mutableStateOf("Ahmed Ishtiaque Zarir") }
-
-    var selectedQuality by remember { mutableStateOf("1080p") }
-    var autoPlayNext by remember { mutableStateOf(true) }
+    var selectedQuality by remember(defaultQuality) { mutableStateOf(defaultQuality) }
+    var autoPlayNext by remember(autoplayNext) { mutableStateOf(autoplayNext) }
     var cacheClearedMessage by remember { mutableStateOf<String?>(null) }
-
-    if (showInAppBrowser) {
-        InAppWebBrowserDialog(
-            url = browserUrl,
-            title = browserTitle,
-            onDismiss = { showInAppBrowser = false }
-        )
-    }
 
     Column(
         modifier = modifier
@@ -159,13 +147,14 @@ fun SettingsScreen(
                             subtitle = "Preferred video resolution when playback starts"
                         ) {
                             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                listOf("1080p", "720p", "480p").forEach { res ->
+                                listOf("Auto", "1080p", "720p", "480p").forEach { res ->
                                     val isSel = selectedQuality == res
                                     GlassChip(
                                         text = res,
                                         selected = isSel,
                                         onClick = {
                                             selectedQuality = res
+                                            onDefaultQualityChanged(res)
                                             Toast.makeText(context, "Preferred quality set to $res", Toast.LENGTH_SHORT).show()
                                         }
                                     )
@@ -195,7 +184,10 @@ fun SettingsScreen(
                             }
                             Switch(
                                 checked = autoPlayNext,
-                                onCheckedChange = { autoPlayNext = it },
+                                onCheckedChange = {
+                                    autoPlayNext = it
+                                    onAutoplayNextChanged(it)
+                                },
                                 colors = SwitchDefaults.colors(
                                     checkedThumbColor = PureWhite,
                                     checkedTrackColor = BrandCoral,
@@ -302,158 +294,6 @@ fun SettingsScreen(
                 }
             }
 
-            // Group: Developer Credits & Component Attribution
-            item {
-                SettingsSectionHeader(title = "Developer Credits & Attribution")
-                SolidGlassCard(cornerRadius = 20.dp) {
-                    Column(modifier = Modifier.padding(18.dp)) {
-                        // Lead Developer
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Box(
-                                modifier = Modifier
-                                    .size(42.dp)
-                                    .clip(CircleShape)
-                                    .background(SolidGlassControlBg)
-                                    .border(1.dp, SolidGlassBorderBrush, CircleShape),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Icon(Icons.Default.Code, null, tint = BrandCoral, modifier = Modifier.size(22.dp))
-                            }
-                            Spacer(Modifier.width(14.dp))
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text("ImAhmedZarir (Ahmed Ishtiaque Zarir)", color = PureWhite, fontSize = 15.sp, fontWeight = FontWeight.Bold)
-                                Text("Lead Creator & Contributor", color = TextSecondary, fontSize = 12.sp)
-                            }
-                            SolidGlassSecondaryButton(
-                                text = "Portfolio",
-                                onClick = {
-                                    browserUrl = DevCreditManager.DEV_URL
-                                    browserTitle = "Ahmed Ishtiaque Zarir"
-                                    showInAppBrowser = true
-                                }
-                            )
-                        }
-
-                        Spacer(Modifier.height(16.dp))
-                        HorizontalDivider(color = Color.White.copy(alpha = 0.07f))
-                        Spacer(Modifier.height(14.dp))
-
-                        // Component: Solid Glass
-                        ComponentCreditRow(
-                            name = "Solid Glass",
-                            author = "deeplethe",
-                            desc = "Tactile physics, edge rim, hairline borders, and shadow hierarchy design system.",
-                            url = "https://github.com/deeplethe/solid-glass",
-                            onOpen = {
-                                browserUrl = "https://github.com/deeplethe/solid-glass"
-                                browserTitle = "Solid Glass by deeplethe"
-                                showInAppBrowser = true
-                            }
-                        )
-
-                        Spacer(Modifier.height(14.dp))
-                        HorizontalDivider(color = Color.White.copy(alpha = 0.07f))
-                        Spacer(Modifier.height(14.dp))
-
-                        // Component: Liquid Glass Android
-                        ComponentCreditRow(
-                            name = "Liquid Glass Android",
-                            author = "QWEA0",
-                            desc = "Real-time SDF refraction optics, chromatic dispersion, and backdrop blur engine.",
-                            url = "https://github.com/QWEA0/Liquid-Glass-Android",
-                            onOpen = {
-                                browserUrl = "https://github.com/QWEA0/Liquid-Glass-Android"
-                                browserTitle = "Liquid Glass Android by QWEA0"
-                                showInAppBrowser = true
-                            }
-                        )
-
-                        Spacer(Modifier.height(14.dp))
-                        HorizontalDivider(color = Color.White.copy(alpha = 0.07f))
-                        Spacer(Modifier.height(14.dp))
-
-                        // Component: Core Libraries
-                        Text("Frameworks & Technologies", color = PureWhite, fontSize = 13.5.sp, fontWeight = FontWeight.Bold)
-                        Spacer(Modifier.height(4.dp))
-                        Text(
-                            text = "AndroidX Media3 ExoPlayer, Jetpack Compose Material 3, Kotlin Coroutines & Flow, Coil Image Loader, Square Retrofit & OkHttp, Moshi, Room SQLite Database.",
-                            color = TextSecondary,
-                            fontSize = 12.sp,
-                            lineHeight = 17.sp
-                        )
-                    }
-                }
-            }
-
-            // Group: Support Developer & Donations
-            item {
-                SettingsSectionHeader(title = "Support Developer & Donations")
-                SolidGlassCard(cornerRadius = 20.dp) {
-                    Column(modifier = Modifier.padding(18.dp)) {
-                        Text(
-                            text = "Help Upgrade Cloud Infrastructure",
-                            color = PureWhite,
-                            fontSize = 14.5.sp,
-                            fontWeight = FontWeight.Bold
-                        )
-                        Spacer(Modifier.height(4.dp))
-                        Text(
-                            text = "CinePulse is free and open-source. Donations directly support upgrading the backend API from free-tier hosting to dedicated high-speed cloud servers.",
-                            color = TextSecondary,
-                            fontSize = 12.sp,
-                            lineHeight = 16.sp
-                        )
-                        Spacer(Modifier.height(14.dp))
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clip(RoundedCornerShape(12.dp))
-                                .background(SolidGlassControlBg)
-                                .border(1.dp, SolidGlassBorderBrush, RoundedCornerShape(12.dp))
-                                .clickable {
-                                    browserUrl = "mailto:ahmedishtiaquezarir@gmail.com"
-                                    browserTitle = "Donate via Email"
-                                    showInAppBrowser = true
-                                }
-                                .padding(horizontal = 14.dp, vertical = 10.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            Column {
-                                Text("Email Developer (Donations)", color = PureWhite, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
-                                Text("ahmedishtiaquezarir@gmail.com", color = BrandCoral, fontSize = 11.5.sp)
-                            }
-                            Icon(Icons.AutoMirrored.Filled.OpenInNew, contentDescription = null, tint = PureWhite, modifier = Modifier.size(16.dp))
-                        }
-                        Spacer(Modifier.height(10.dp))
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clip(RoundedCornerShape(12.dp))
-                                .background(SolidGlassControlBg)
-                                .border(1.dp, SolidGlassBorderBrush, RoundedCornerShape(12.dp))
-                                .clickable {
-                                    browserUrl = "https://t.me/@imahmedzarir"
-                                    browserTitle = "Telegram Contact"
-                                    showInAppBrowser = true
-                                }
-                                .padding(horizontal = 14.dp, vertical = 10.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            Column {
-                                Text("Telegram Contact", color = PureWhite, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
-                                Text("https://t.me/@imahmedzarir", color = BrandCoral, fontSize = 11.5.sp)
-                            }
-                            Icon(Icons.AutoMirrored.Filled.OpenInNew, contentDescription = null, tint = PureWhite, modifier = Modifier.size(16.dp))
-                        }
-                    }
-                }
-            }
-
             // Group: Legal & Privacy Disclosures
             item {
                 SettingsSectionHeader(title = "Privacy, Legality & Hosting")
@@ -501,7 +341,7 @@ fun SettingsScreen(
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
                     Text(
-                        text = "CinePulse Ultimate • Version 1.0",
+                        text = "CinePulse Ultimate • Version v2.3.0",
                         color = TextMuted,
                         fontSize = 12.sp
                     )
@@ -546,48 +386,6 @@ private fun SettingsOptionRow(
         }
         Spacer(Modifier.height(10.dp))
         trailing()
-    }
-}
-
-@Composable
-private fun ComponentCreditRow(
-    name: String,
-    author: String,
-    desc: String,
-    url: String,
-    onOpen: () -> Unit
-) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        verticalAlignment = Alignment.Top,
-        horizontalArrangement = Arrangement.SpaceBetween
-    ) {
-        Column(modifier = Modifier.weight(1f)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(name, color = PureWhite, fontSize = 14.sp, fontWeight = FontWeight.Bold)
-                Spacer(Modifier.width(8.dp))
-                SolidGlassTag(text = author, textColor = BrandCoral)
-            }
-            Spacer(Modifier.height(3.dp))
-            Text(desc, color = TextSecondary, fontSize = 12.sp, lineHeight = 16.sp)
-        }
-        Spacer(Modifier.width(10.dp))
-        Box(
-            modifier = Modifier
-                .size(34.dp)
-                .clip(CircleShape)
-                .background(SolidGlassControlBg)
-                .border(1.dp, SolidGlassBorderBrush, CircleShape)
-                .clickable(onClick = onOpen),
-            contentAlignment = Alignment.Center
-        ) {
-            Icon(
-                Icons.AutoMirrored.Filled.OpenInNew,
-                contentDescription = "Open $name",
-                tint = PureWhite,
-                modifier = Modifier.size(16.dp)
-            )
-        }
     }
 }
 

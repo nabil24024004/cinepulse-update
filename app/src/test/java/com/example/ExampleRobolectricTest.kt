@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import com.example.data.local.AppDatabase
+import com.example.data.local.DownloadRecordEntity
 import com.example.data.local.WatchHistoryEntity
 import com.example.data.local.WatchlistEntity
 import com.example.data.model.*
@@ -157,6 +158,31 @@ class ExampleRobolectricTest {
         dao.removeFromWatchlist("987654")
         val afterRemove = dao.isWatchlisted("987654").first()
         assertFalse(afterRemove)
+    }
+
+    @Test
+    fun testDownloadRecordPersistence() = runBlocking {
+        val dao = database.watchDao()
+        val record = DownloadRecordEntity(
+            downloadId = 42L,
+            title = "Test Movie",
+            resolution = "720p",
+            season = 0,
+            episode = 0,
+            uriString = "content://downloads/test",
+            status = 8
+        )
+
+        dao.upsertDownloadRecord(record)
+        val stored = dao.getAllDownloadRecords().first()
+        assertEquals(1, stored.size)
+        assertEquals(42L, stored.single().downloadId)
+        assertEquals("Test Movie", stored.single().title)
+        assertEquals("content://downloads/test", stored.single().uriString)
+        assertEquals(8, stored.single().status)
+
+        dao.deleteDownloadRecord(42L)
+        assertTrue(dao.getAllDownloadRecords().first().isEmpty())
     }
 
     @Test

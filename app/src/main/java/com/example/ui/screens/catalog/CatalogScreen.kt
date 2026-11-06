@@ -11,6 +11,8 @@ import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -25,6 +27,7 @@ import androidx.compose.ui.unit.sp
 import com.example.data.model.MovieItem
 import com.example.ui.CatalogType
 import com.example.ui.CatalogUiState
+import com.example.ui.components.GlassIconButton
 import com.example.ui.components.MoviePosterCard
 import com.example.ui.theme.*
 
@@ -43,6 +46,7 @@ private val SORTS = listOf(
 @Composable
 fun CatalogScreen(
     uiState: CatalogUiState,
+    onBackClick: () -> Unit,
     onTypeSelected: (CatalogType) -> Unit,
     onGenreSelected: (String) -> Unit,
     onSortSelected: (String) -> Unit,
@@ -90,17 +94,28 @@ fun CatalogScreen(
                 .padding(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 10.dp)
         ) {
             Column(modifier = Modifier.fillMaxWidth()) {
-                Text(
-                    text = "Explore & Browse",
-                    style = MaterialTheme.typography.headlineSmall.copy(
-                        fontWeight = FontWeight.ExtraBold,
-                        color = TextPrimary
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    GlassIconButton(
+                        icon = Icons.AutoMirrored.Filled.ArrowBack,
+                        contentDescription = "Back",
+                        onClick = onBackClick
                     )
-                )
+                    Spacer(modifier = Modifier.width(10.dp))
+                    Text(
+                        text = "Explore & Browse",
+                        style = MaterialTheme.typography.headlineSmall.copy(
+                            fontWeight = FontWeight.ExtraBold,
+                            color = TextPrimary
+                        )
+                    )
 
-                Spacer(modifier = Modifier.height(12.dp))
+                }
 
                 // ── iOS Frosted Glass Segmented Switcher: Movies | TV Series | Animation ──
+                Spacer(modifier = Modifier.height(12.dp))
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()

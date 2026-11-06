@@ -88,6 +88,8 @@ fun VideoPlayer(
     captions: List<CaptionItem> = emptyList(),
     initialPositionMs: Long = 0L,
     isSeries: Boolean = false,
+    preferredQuality: String = "Auto",
+    autoplayNextEpisode: Boolean = true,
     onProgressUpdate: (positionMs: Long, durationMs: Long) -> Unit,
     onBackClick: () -> Unit,
     onRefreshStream: (resumePos: Long) -> Unit = {},
@@ -108,11 +110,15 @@ fun VideoPlayer(
         activity?.isInPictureInPictureMode == true
     } else false
 
-    var selectedSourceIndex by remember(sources) {
+    var selectedSourceIndex by remember(sources, preferredQuality) {
+        val preferred = preferredQuality.takeIf { it.isNotBlank() && !it.equals("Auto", ignoreCase = true) }
+            ?.let { quality -> sources.indexOfFirst { it.resolution.contains(quality, ignoreCase = true) } }
+            ?: -1
         val preferred1080 = sources.indexOfFirst { it.resolution.contains("1080", ignoreCase = true) }
         val preferred720 = sources.indexOfFirst { it.resolution.contains("720", ignoreCase = true) }
         val preferred480 = sources.indexOfFirst { it.resolution.contains("480", ignoreCase = true) }
         val defaultIdx = when {
+            preferred >= 0 -> preferred
             preferred720 >= 0 -> preferred720
             preferred1080 >= 0 -> preferred1080
             preferred480 >= 0 -> preferred480
@@ -152,6 +158,7 @@ fun VideoPlayer(
     var captionBgOpacity by remember { mutableFloatStateOf(CaptionPreferences.getBackgroundOpacity(context)) }
     var subtitleDialogTab by remember { mutableIntStateOf(0) }
     var streamReloadTrigger by remember { mutableIntStateOf(0) }
+    var hasAutoAdvanced by remember { mutableStateOf(false) }
 
     // Modals
     var showSettingsSheet by remember { mutableStateOf(false) }
@@ -195,8 +202,13 @@ fun VideoPlayer(
 
     // Seamless media loading: sets media item on source change, retry trigger, or error recovery
     LaunchedEffect(currentSource, streamReloadTrigger) {
+        hasAutoAdvanced = false
         if (currentSource != null && currentSource.url.isNotBlank()) {
-            val url = currentSource.url
+            val rawUrl = currentSource.url
+            currentSource.resolution.let { StreamTokenManager.setPreferredResolution(it) }
+            val url = withContext(Dispatchers.IO) {
+                StreamTokenManager.resolvePlaybackUrl(rawUrl)
+            }
             val currentMediaId = exoPlayer.currentMediaItem?.mediaId
             val isPlayerIdleOrError = exoPlayer.playbackState == Player.STATE_IDLE || exoPlayer.playerError != null
             if (currentMediaId != url || isPlayerIdleOrError || streamReloadTrigger > 0) {
@@ -324,6 +336,10 @@ fun VideoPlayer(
                     hasError = false
                     autoRetryCount = 0
                     reconnectingMessage = null
+                }
+                if (state == Player.STATE_ENDED && autoplayNextEpisode && hasNextEpisode && !hasAutoAdvanced) {
+                    hasAutoAdvanced = true
+                    onNextEpisode()
                 }
             }
 

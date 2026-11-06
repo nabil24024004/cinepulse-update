@@ -3,6 +3,7 @@
 .kotlin
 /local.properties
 /.idea/caches
+/.idea/
 /.idea/libraries
 /.idea/modules.xml
 /.idea/workspace.xml
@@ -18,4 +19,6 @@ build/
 local.properties
 .env
 debug.keystore
+release.keystore
+/gradle/gradle-daemon-jvm.properties
 *.apk

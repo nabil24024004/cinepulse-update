@@ -27,7 +27,9 @@ data class MovieItem(
     @Json(name = "rating") val rawRating: Any? = null,
     @Json(name = "year") val rawYear: Any? = null,
     val genre: String? = null,
-    @Json(name = "type") val rawType: Any? = null
+    @Json(name = "type") val rawType: Any? = null,
+    @Json(name = "country") val rawCountry: Any? = null,
+    @Json(name = "country_name") val rawCountryName: Any? = null
 ) {
     constructor(
         name: String?,
@@ -38,7 +40,8 @@ data class MovieItem(
         rating: String? = null,
         year: String? = null,
         genre: String? = null,
-        type: String? = null
+        type: String? = null,
+        country: String? = null
     ) : this(
         name = name,
         posterUrl = posterUrl,
@@ -48,7 +51,8 @@ data class MovieItem(
         rawRating = rating,
         rawYear = year,
         genre = genre,
-        rawType = type
+        rawType = type,
+        rawCountry = country
     )
 
     val subjectId: String
@@ -82,6 +86,9 @@ data class MovieItem(
             else -> rawType?.toString()
         }
 
+    val country: String?
+        get() = (rawCountryName ?: rawCountry)?.toString()?.takeIf { it.isNotBlank() }
+
     val isTvSeries: Boolean
         get() = type.equals("tv", ignoreCase = true) || type.equals("tv-series", ignoreCase = true)
 }
@@ -97,7 +104,10 @@ data class CatalogResponse(
 data class SearchResponse(
     val query: String? = null,
     val page: Int? = 1,
+    @Json(name = "per_page") val perPage: Int? = 24,
     val total: Long? = 0,
+    @Json(name = "total_pages") val totalPages: Int? = null,
+    @Json(name = "has_more") val hasMore: Boolean? = null,
     val items: List<MovieItem> = emptyList()
 )
 

@@ -88,6 +88,14 @@ object StreamTokenManager {
         preferredResolution = resolution
     }
 
+    /** Resolves only remote playback URLs; local content/file URIs must remain untouched. */
+    fun resolvePlaybackUrl(currentUrl: String): String {
+        if (!currentUrl.startsWith("http://", ignoreCase = true) &&
+            !currentUrl.startsWith("https://", ignoreCase = true)
+        ) return currentUrl
+        return getValidStreamUrl(currentUrl)
+    }
+
     fun updateActiveSources(sources: List<StreamSource>) {
         if (sources.isNotEmpty()) {
             lock.withLock {

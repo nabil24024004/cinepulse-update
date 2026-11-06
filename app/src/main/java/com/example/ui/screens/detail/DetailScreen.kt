@@ -55,9 +55,13 @@ fun DetailScreen(
     onPlayClick: (season: Int, episode: Int) -> Unit,
     onSelectEpisode: (season: Int, episode: Int) -> Unit,
     onToggleWatchlist: () -> Unit,
+    preferredQuality: String = "Auto",
+    autoplayNextEpisode: Boolean = true,
     onProgressUpdate: (pos: Long, dur: Long) -> Unit,
     onFetchStreamForDownload: suspend (season: Int, episode: Int) -> List<StreamSource>,
+    onDownloadEnqueued: (downloadId: Long, title: String, resolution: String, season: Int, episode: Int) -> Unit = { _, _, _, _, _ -> },
     onRefreshStream: (resumePos: Long) -> Unit = {},
+    onActorClick: (name: String, avatarUrl: String?) -> Unit = { _, _ -> },
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -81,6 +85,8 @@ fun DetailScreen(
             captions = uiState.captions,
             initialPositionMs = uiState.initialSeekPositionMs,
             isSeries = uiState.isSeries,
+            preferredQuality = preferredQuality,
+            autoplayNextEpisode = autoplayNextEpisode,
             onProgressUpdate = onProgressUpdate,
             onBackClick = onBackClick,
             onRefreshStream = onRefreshStream,
@@ -124,21 +130,33 @@ fun DetailScreen(
         scope.launch {
             val fetched = onFetchStreamForDownload(season, episode)
             isFetchingDownload = false
-            if (fetched.isNotEmpty()) {
-                downloadSources = fetched
+            val mp4Sources = fetched.filter { source ->
+                source.url.startsWith("https://", ignoreCase = true) &&
+                    !source.url.contains(".m3u8", ignoreCase = true) &&
+                    !source.format.equals("hls", ignoreCase = true) &&
+                    !source.format.equals("m3u8", ignoreCase = true)
+            }
+            if (mp4Sources.isNotEmpty()) {
+                downloadSources = mp4Sources
                 downloadTargetEpisode = Pair(season, episode)
                 showDownloadDialog = true
             } else {
                 val currentSources = uiState.streamResponse?.sources
-                if (!currentSources.isNullOrEmpty() &&
+                val currentMp4Sources = currentSources?.filter { source ->
+                    source.url.startsWith("https://", ignoreCase = true) &&
+                        !source.url.contains(".m3u8", ignoreCase = true) &&
+                        !source.format.equals("hls", ignoreCase = true) &&
+                        !source.format.equals("m3u8", ignoreCase = true)
+                }.orEmpty()
+                if (currentMp4Sources.isNotEmpty() &&
                     uiState.selectedSeason == season &&
                     uiState.selectedEpisode == episode
                 ) {
-                    downloadSources = currentSources
+                    downloadSources = currentMp4Sources
                     downloadTargetEpisode = Pair(season, episode)
                     showDownloadDialog = true
                 } else {
-                    android.widget.Toast.makeText(context, "No download streams found.", android.widget.Toast.LENGTH_SHORT).show()
+                    android.widget.Toast.makeText(context, "No downloadable MP4 stream found.", android.widget.Toast.LENGTH_SHORT).show()
                 }
             }
         }
@@ -217,6 +235,8 @@ fun DetailScreen(
                                 captions = uiState.captions,
                                 initialPositionMs = uiState.initialSeekPositionMs,
                                 isSeries = uiState.isSeries,
+                                preferredQuality = preferredQuality,
+                                autoplayNextEpisode = autoplayNextEpisode,
                                 onProgressUpdate = onProgressUpdate,
                                 onBackClick = onBackClick,
                                 onRefreshStream = onRefreshStream,
@@ -447,6 +467,37 @@ fun DetailScreen(
                             }
                         }
                         Spacer(Modifier.height(18.dp))
+
+                        if (uiState.streamError != null && !uiState.isLoadingStream && !uiState.isPlaying) {
+                            LiquidGlassCard(cornerRadius = 14.dp) {
+                                Row(
+                                    modifier = Modifier.padding(14.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Icon(Icons.Default.ErrorOutline, contentDescription = null, tint = CinemaAmber)
+                                    Spacer(Modifier.width(10.dp))
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text("Playback unavailable", color = TextPrimary, fontWeight = FontWeight.Bold)
+                                        Text(
+                                            uiState.streamError ?: "Try again later.",
+                                            color = TextSecondary,
+                                            fontSize = 12.sp,
+                                            maxLines = 2,
+                                            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                                        )
+                                    }
+                                    TextButton(onClick = {
+                                        onPlayClick(
+                                            if (uiState.isSeries) uiState.selectedSeason else 0,
+                                            if (uiState.isSeries) uiState.selectedEpisode else 0
+                                        )
+                                    }) {
+                                        Text("Retry", color = CinemaRed)
+                                    }
+                                }
+                            }
+                            Spacer(Modifier.height(16.dp))
+                        }
                     }
 
                     // Synopsis
@@ -476,7 +527,15 @@ fun DetailScreen(
                                 itemsIndexed(stars, key = { idx, star -> "${star.name ?: "star"}_$idx" }) { _, star ->
                                     Column(
                                         horizontalAlignment = Alignment.CenterHorizontally,
-                                        modifier = Modifier.width(72.dp)
+                                        modifier = Modifier
+                                            .width(72.dp)
+                                            .clip(RoundedCornerShape(12.dp))
+                                            .clickable {
+                                                star.name?.takeIf { it.isNotBlank() }?.let { name ->
+                                                    onActorClick(name, star.avatarUrl)
+                                                }
+                                            }
+                                            .padding(vertical = 4.dp)
                                     ) {
                                         Box(
                                             modifier = Modifier
@@ -735,7 +794,16 @@ fun DetailScreen(
                                             title = uiState.title,
                                             resolution = source.resolution,
                                             season = if (uiState.isSeries) s else null,
-                                            episode = if (uiState.isSeries) e else null
+                                            episode = if (uiState.isSeries) e else null,
+                                            onEnqueued = { downloadId ->
+                                                onDownloadEnqueued(
+                                                    downloadId,
+                                                    uiState.title,
+                                                    source.resolution,
+                                                    if (uiState.isSeries) s else 0,
+                                                    if (uiState.isSeries) e else 0
+                                                )
+                                            }
                                         )
                                     }
                                     .padding(12.dp)

@@ -1,6 +1,7 @@
 package com.example.data.repository
 
 import com.example.data.local.AppDatabase
+import com.example.data.local.DownloadRecordEntity
 import com.example.data.local.WatchHistoryEntity
 import com.example.data.local.WatchlistEntity
 import com.example.data.model.*
@@ -66,11 +67,12 @@ class MovieRepository(
         return catalogCache[key]
     }
 
-    suspend fun getMovies(page: Int, sort: String?, genre: String?): Result<CatalogResponse> =
+    suspend fun getMovies(page: Int, sort: String?, genre: String?, country: String? = null, year: String? = null): Result<CatalogResponse> =
         withContext(Dispatchers.IO) {
-            val cacheKey = "movies_${page}_${sort}_${genre}"
+            val cacheKey = "movies_${page}_${sort}_${genre}" +
+                if (country != null || year != null) "_${country}_${year}" else ""
             try {
-                val response = api.getMovies(page = page, sort = sort, genre = genre)
+                val response = api.getMovies(page = page, sort = sort, genre = genre, country = country, year = year)
                 if (response.items.isNotEmpty()) {
                     catalogCache[cacheKey] = response
                 }
@@ -81,11 +83,12 @@ class MovieRepository(
             }
         }
 
-    suspend fun getTvSeries(page: Int, sort: String?, genre: String?): Result<CatalogResponse> =
+    suspend fun getTvSeries(page: Int, sort: String?, genre: String?, country: String? = null, year: String? = null): Result<CatalogResponse> =
         withContext(Dispatchers.IO) {
-            val cacheKey = "tv_${page}_${sort}_${genre}"
+            val cacheKey = "tv_${page}_${sort}_${genre}" +
+                if (country != null || year != null) "_${country}_${year}" else ""
             try {
-                val response = api.getTvSeries(page = page, sort = sort, genre = genre)
+                val response = api.getTvSeries(page = page, sort = sort, genre = genre, country = country, year = year)
                 if (response.items.isNotEmpty()) {
                     catalogCache[cacheKey] = response
                 }
@@ -96,11 +99,12 @@ class MovieRepository(
             }
         }
 
-    suspend fun getAnimation(page: Int, sort: String?, genre: String?): Result<CatalogResponse> =
+    suspend fun getAnimation(page: Int, sort: String?, genre: String?, country: String? = null, year: String? = null): Result<CatalogResponse> =
         withContext(Dispatchers.IO) {
-            val cacheKey = "anim_${page}_${sort}_${genre}"
+            val cacheKey = "anim_${page}_${sort}_${genre}" +
+                if (country != null || year != null) "_${country}_${year}" else ""
             try {
-                val response = api.getAnimation(page = page, sort = sort, genre = genre)
+                val response = api.getAnimation(page = page, sort = sort, genre = genre, country = country, year = year)
                 if (response.items.isNotEmpty()) {
                     catalogCache[cacheKey] = response
                 }
@@ -278,6 +282,22 @@ class MovieRepository(
 
     // Local Watchlist
     val watchlist: Flow<List<WatchlistEntity>> = dao.getAllWatchlist()
+
+    val downloadRecords: Flow<List<DownloadRecordEntity>> = dao.getAllDownloadRecords()
+
+    suspend fun saveDownloadRecord(record: DownloadRecordEntity) = withContext(Dispatchers.IO) {
+        try {
+            dao.upsertDownloadRecord(record)
+        } catch (_: Exception) {
+        }
+    }
+
+    suspend fun deleteDownloadRecord(downloadId: Long) = withContext(Dispatchers.IO) {
+        try {
+            dao.deleteDownloadRecord(downloadId)
+        } catch (_: Exception) {
+        }
+    }
 
     fun isWatchlisted(subjectId: String): Flow<Boolean> = dao.isWatchlisted(subjectId)
 

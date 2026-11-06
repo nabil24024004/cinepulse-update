@@ -15,6 +15,7 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.animation.*
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -25,14 +26,17 @@ import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -40,11 +44,13 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import kotlinx.coroutines.delay
 import com.example.ui.*
 import com.example.ui.screens.catalog.CatalogScreen
 import com.example.ui.screens.detail.DetailScreen
 import com.example.ui.screens.home.HomeScreen
 import com.example.ui.screens.library.LibraryScreen
+import com.example.ui.screens.actor.ActorScreen
 import com.example.ui.screens.search.SearchScreen
 import com.example.ui.screens.settings.SettingsScreen
 import com.example.ui.theme.*
@@ -69,7 +75,7 @@ class MainActivity : ComponentActivity() {
     ) {
         super.onPictureInPictureModeChanged(isInPictureInPictureMode, newConfig)
         isInPipMode = isInPictureInPictureMode
-        if (!isInPictureInPictureMode) {
+        if (!isInPictureInPictureMode && !isChangingConfigurations) {
             // When leaving PiP, if the user closed/dismissed the popup window, immediately halt playback
             if (isFinishing || !lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)) {
                 val viewModel = ViewModelProvider(this)[MainViewModel::class.java]
@@ -81,7 +87,7 @@ class MainActivity : ComponentActivity() {
     override fun onStop() {
         super.onStop()
         // Stop playback when activity is stopped and not actively displaying PiP
-        if (!isInPipMode || isFinishing) {
+        if ((!isInPipMode || isFinishing) && !isChangingConfigurations) {
             val viewModel = ViewModelProvider(this)[MainViewModel::class.java]
             viewModel.closePlayer()
         }
@@ -90,7 +96,9 @@ class MainActivity : ComponentActivity() {
     override fun onDestroy() {
         super.onDestroy()
         val viewModel = ViewModelProvider(this)[MainViewModel::class.java]
-        viewModel.closePlayer()
+        if (!isChangingConfigurations) {
+            viewModel.closePlayer()
+        }
     }
 
     override fun onUserLeaveHint() {
@@ -118,6 +126,17 @@ fun MainApp(
     viewModel: MainViewModel = viewModel(),
     isInPipMode: Boolean = false
 ) {
+    var showSplash by rememberSaveable { mutableStateOf(true) }
+    LaunchedEffect(Unit) {
+        delay(850)
+        showSplash = false
+    }
+
+    if (showSplash && !isInPipMode) {
+        CinePulseSplash()
+        return
+    }
+
     val context = LocalContext.current
     val activity = remember(context) { context.findActivity() }
     val configuration = LocalConfiguration.current
@@ -128,21 +147,30 @@ fun MainApp(
     val catalogState by viewModel.catalogState.collectAsStateWithLifecycle()
     val searchState by viewModel.searchState.collectAsStateWithLifecycle()
     val detailState by viewModel.detailPlayerState.collectAsStateWithLifecycle()
+    val actorState by viewModel.actorState.collectAsStateWithLifecycle()
 
     val watchHistory by viewModel.watchHistory.collectAsStateWithLifecycle()
     val watchlist by viewModel.watchlist.collectAsStateWithLifecycle()
     val isNetworkAvailable by viewModel.isNetworkAvailable.collectAsStateWithLifecycle()
     val isGetStartedDismissed by viewModel.isGetStartedDismissed.collectAsStateWithLifecycle()
     val downloadedItems by viewModel.downloadedItems.collectAsStateWithLifecycle()
+    val defaultQuality by viewModel.defaultQuality.collectAsStateWithLifecycle()
+    val autoplayNext by viewModel.autoplayNext.collectAsStateWithLifecycle()
 
     val isDetailOpen = detailState.slug != null
+    val isActorOpen = actorState.name != null
     val isFullscreenPlaying = isLandscape && detailState.isPlaying
+    val isTablet = configuration.smallestScreenWidthDp >= 600
+    val showNavigation = !isInPipMode && !isDetailOpen && !isActorOpen && !isFullscreenPlaying
+    val showTabletNavigation = isTablet && showNavigation
 
     val exoPlayer = remember(context) { viewModel.getPlayer(context) }
 
     // Handle back button: In landscape, exit fullscreen back to portrait first
-    BackHandler(enabled = !isInPipMode && (isLandscape || isDetailOpen || currentTab != AppTab.HOME)) {
-        if (isLandscape) {
+    BackHandler(enabled = !isInPipMode && (isActorOpen || isLandscape || isDetailOpen || currentTab != AppTab.HOME)) {
+        if (isActorOpen) {
+            viewModel.closeActor()
+        } else if (isLandscape) {
             activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
         } else if (isDetailOpen) {
             viewModel.closeDetail()
@@ -154,12 +182,14 @@ fun MainApp(
     Scaffold(
         containerColor = JetBlack,
         bottomBar = {
-            if (!isInPipMode && !isDetailOpen && !isFullscreenPlaying) {
+            if (!isTablet && showNavigation) {
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .windowInsetsPadding(WindowInsets.navigationBars)
-                        .padding(horizontal = 24.dp, vertical = 10.dp),
+                        .windowInsetsPadding(
+                            WindowInsets.navigationBars.only(WindowInsetsSides.Bottom)
+                        )
+                        .padding(start = 24.dp, top = 8.dp, end = 24.dp, bottom = 2.dp),
                     contentAlignment = Alignment.Center
                 ) {
                     // Authentic iOS Frosted Glass Floating Dock
@@ -186,7 +216,7 @@ fun MainApp(
                                 icon = if (currentTab == AppTab.HOME) Icons.Filled.Home else Icons.Outlined.Home,
                                 label = "Home",
                                 testTag = "nav_home",
-                                modifier = Modifier.weight(1f)
+                                modifier = Modifier.weight(1f).fillMaxHeight()
                             )
 
                             LiquidGlassNavItem(
@@ -195,7 +225,7 @@ fun MainApp(
                                 icon = if (currentTab == AppTab.CATALOG) Icons.Filled.Explore else Icons.Outlined.Explore,
                                 label = "Browse",
                                 testTag = "nav_browse",
-                                modifier = Modifier.weight(1f)
+                                modifier = Modifier.weight(1f).fillMaxHeight()
                             )
 
                             LiquidGlassNavItem(
@@ -204,7 +234,7 @@ fun MainApp(
                                 icon = Icons.Filled.Search,
                                 label = "Search",
                                 testTag = "nav_search",
-                                modifier = Modifier.weight(1f)
+                                modifier = Modifier.weight(1f).fillMaxHeight()
                             )
 
                             LiquidGlassNavItem(
@@ -213,7 +243,7 @@ fun MainApp(
                                 icon = if (currentTab == AppTab.LIBRARY) Icons.Filled.Bookmark else Icons.Outlined.BookmarkBorder,
                                 label = "Library",
                                 testTag = "nav_library",
-                                modifier = Modifier.weight(1f)
+                                modifier = Modifier.weight(1f).fillMaxHeight()
                             )
 
                             LiquidGlassNavItem(
@@ -222,7 +252,7 @@ fun MainApp(
                                 icon = if (currentTab == AppTab.SETTINGS) Icons.Filled.Settings else Icons.Outlined.Settings,
                                 label = "Settings",
                                 testTag = "nav_settings",
-                                modifier = Modifier.weight(1f)
+                                modifier = Modifier.weight(1f).fillMaxHeight()
                             )
                         }
                     }
@@ -237,7 +267,29 @@ fun MainApp(
                 .fillMaxSize()
                 .background(JetBlack)
         ) {
-            if (isDetailOpen) {
+            if (showTabletNavigation) {
+                TabletNavigationRail(
+                    currentTab = currentTab,
+                    onTabSelected = { viewModel.selectTab(it) }
+                )
+            }
+
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(start = if (showTabletNavigation) 104.dp else 0.dp)
+            ) {
+                if (isActorOpen) {
+                ActorScreen(
+                    uiState = actorState,
+                    onBackClick = { viewModel.closeActor() },
+                    onMovieClick = { movie ->
+                        viewModel.closeActor()
+                        viewModel.openDetail(movie.safeSlug, movie.subjectId, movie.safeName, movie.type)
+                    },
+                    onLoadMore = { viewModel.loadMoreActorTitles() }
+                )
+                } else if (isDetailOpen) {
                 DetailScreen(
                     uiState = detailState,
                     exoPlayer = exoPlayer,
@@ -258,6 +310,8 @@ fun MainApp(
                         viewModel.selectEpisode(se, ep)
                     },
                     onToggleWatchlist = { viewModel.toggleWatchlist() },
+                    preferredQuality = defaultQuality,
+                    autoplayNextEpisode = autoplayNext,
                     onProgressUpdate = { pos, dur ->
                         viewModel.saveProgress(pos, dur)
                     },
@@ -269,10 +323,15 @@ fun MainApp(
                         } else {
                             emptyList()
                         }
-                    }
+                    },
+                    onDownloadEnqueued = { downloadId, title, resolution, season, episode ->
+                        viewModel.registerDownload(downloadId, title, resolution, season, episode)
+                    },
+                    onRefreshStream = { position -> viewModel.refreshCurrentStream(position) },
+                    onActorClick = { name, avatarUrl -> viewModel.openActor(name, avatarUrl) }
                 )
-            } else {
-                when (currentTab) {
+                } else {
+                    when (currentTab) {
                     AppTab.HOME -> {
                         HomeScreen(
                             uiState = homeState,
@@ -311,6 +370,7 @@ fun MainApp(
                     AppTab.CATALOG -> {
                         CatalogScreen(
                             uiState = catalogState,
+                            onBackClick = { viewModel.selectTab(AppTab.HOME) },
                             onTypeSelected = { type -> viewModel.setCatalogType(type) },
                             onGenreSelected = { genre -> viewModel.setCatalogGenre(genre) },
                             onSortSelected = { sort -> viewModel.setCatalogSort(sort) },
@@ -326,6 +386,13 @@ fun MainApp(
                             uiState = searchState,
                             onQueryChanged = { q -> viewModel.onSearchQueryChanged(q) },
                             onSearchSubmit = { q -> viewModel.performSearch(q) },
+                            onBackClick = { viewModel.selectTab(AppTab.HOME) },
+                            onTypeSelected = { type -> viewModel.setSearchType(type) },
+                            onGenreSelected = { genre -> viewModel.setSearchGenre(genre) },
+                            onYearSelected = { year -> viewModel.setSearchYear(year) },
+                            onCountrySelected = { country -> viewModel.setSearchCountry(country) },
+                            onClearFilters = { viewModel.clearSearchFilters() },
+                            onClearSearchHistory = { viewModel.clearSearchHistory() },
                             onMovieClick = { movie ->
                                 viewModel.openDetail(movie.safeSlug, movie.subjectId, movie.safeName, movie.type)
                             }
@@ -337,6 +404,7 @@ fun MainApp(
                             watchlist = watchlist,
                             watchHistory = watchHistory,
                             downloadedItems = downloadedItems,
+                            onBackClick = { viewModel.selectTab(AppTab.HOME) },
                             onMovieClick = { movie ->
                                 viewModel.openDetail(movie.safeSlug, movie.subjectId, movie.safeName, movie.type)
                             },
@@ -350,7 +418,7 @@ fun MainApp(
                             onClearHistory = { viewModel.clearAllHistory() },
                             onExploreClick = { viewModel.selectTab(AppTab.HOME) },
                             onPlayDownloadedItem = { item -> viewModel.playDownloadedItem(item) },
-                            onDeleteDownloadedFile = { file -> viewModel.deleteDownloadedFile(file) },
+                            onDeleteDownloadedFile = { item -> viewModel.deleteDownloadedItem(item) },
                             onRefreshDownloads = { viewModel.refreshDownloads() }
                         )
                     }
@@ -361,13 +429,113 @@ fun MainApp(
                             onClearHistory = { viewModel.clearAllHistory() },
                             onClearWatchlist = { viewModel.clearAllWatchlist() },
                             onOpenDownloads = { viewModel.selectTab(AppTab.LIBRARY) },
+                            defaultQuality = defaultQuality,
+                            autoplayNext = autoplayNext,
+                            onDefaultQualityChanged = { quality -> viewModel.setDefaultQuality(quality) },
+                            onAutoplayNextChanged = { enabled -> viewModel.setAutoplayNext(enabled) },
                             onShowGetStarted = {
                                 viewModel.showGetStarted()
                                 viewModel.selectTab(AppTab.HOME)
                             }
                         )
                     }
+                    }
                 }
+            }
+        }
+    }
+}
+
+@Composable
+private fun CinePulseSplash() {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(JetBlack),
+        contentAlignment = Alignment.Center
+    ) {
+        Image(
+            painter = painterResource(R.drawable.cinepulse_splash),
+            contentDescription = "CinePulse",
+            modifier = Modifier
+                .fillMaxWidth()
+                .widthIn(max = 360.dp)
+                .aspectRatio(4f),
+            contentScale = ContentScale.Crop
+        )
+    }
+}
+
+@Composable
+private fun TabletNavigationRail(
+    currentTab: AppTab,
+    onTabSelected: (AppTab) -> Unit
+) {
+    Box(
+        modifier = Modifier
+            .fillMaxHeight()
+            .width(96.dp)
+            .windowInsetsPadding(WindowInsets.systemBars.only(WindowInsetsSides.Vertical))
+            .padding(start = 16.dp, top = 20.dp, bottom = 20.dp),
+        contentAlignment = Alignment.CenterStart
+    ) {
+        Surface(
+            shape = RoundedCornerShape(28.dp),
+            color = LiquidGlassNavBg,
+            border = BorderStroke(1.dp, LiquidGlassBorderBrush),
+            shadowElevation = 24.dp,
+            modifier = Modifier
+                .width(72.dp)
+                .wrapContentHeight()
+                .testTag("tablet_nav_rail")
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 10.dp, horizontal = 6.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                LiquidGlassNavItem(
+                    selected = currentTab == AppTab.HOME,
+                    onClick = { onTabSelected(AppTab.HOME) },
+                    icon = if (currentTab == AppTab.HOME) Icons.Filled.Home else Icons.Outlined.Home,
+                    label = "Home",
+                    testTag = "nav_home_tablet",
+                    modifier = Modifier.fillMaxWidth().height(56.dp)
+                )
+                LiquidGlassNavItem(
+                    selected = currentTab == AppTab.CATALOG,
+                    onClick = { onTabSelected(AppTab.CATALOG) },
+                    icon = if (currentTab == AppTab.CATALOG) Icons.Filled.Explore else Icons.Outlined.Explore,
+                    label = "Browse",
+                    testTag = "nav_browse_tablet",
+                    modifier = Modifier.fillMaxWidth().height(56.dp)
+                )
+                LiquidGlassNavItem(
+                    selected = currentTab == AppTab.SEARCH,
+                    onClick = { onTabSelected(AppTab.SEARCH) },
+                    icon = Icons.Filled.Search,
+                    label = "Search",
+                    testTag = "nav_search_tablet",
+                    modifier = Modifier.fillMaxWidth().height(56.dp)
+                )
+                LiquidGlassNavItem(
+                    selected = currentTab == AppTab.LIBRARY,
+                    onClick = { onTabSelected(AppTab.LIBRARY) },
+                    icon = if (currentTab == AppTab.LIBRARY) Icons.Filled.Bookmark else Icons.Outlined.BookmarkBorder,
+                    label = "Library",
+                    testTag = "nav_library_tablet",
+                    modifier = Modifier.fillMaxWidth().height(56.dp)
+                )
+                LiquidGlassNavItem(
+                    selected = currentTab == AppTab.SETTINGS,
+                    onClick = { onTabSelected(AppTab.SETTINGS) },
+                    icon = if (currentTab == AppTab.SETTINGS) Icons.Filled.Settings else Icons.Outlined.Settings,
+                    label = "Settings",
+                    testTag = "nav_settings_tablet",
+                    modifier = Modifier.fillMaxWidth().height(56.dp)
+                )
             }
         }
     }
@@ -393,9 +561,8 @@ private fun LiquidGlassNavItem(
 ) {
     val haptic = androidx.compose.ui.platform.LocalHapticFeedback.current
 
-    Column(
+    Box(
         modifier = modifier
-            .fillMaxHeight()
             .clip(RoundedCornerShape(18.dp))
             .clickable {
                 haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.TextHandleMove)
@@ -403,17 +570,17 @@ private fun LiquidGlassNavItem(
             }
             .padding(vertical = 4.dp)
             .testTag(testTag),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center
+        contentAlignment = Alignment.Center
     ) {
         Box(
             modifier = Modifier
-                .height(28.dp)
-                .width(46.dp)
-                .clip(RoundedCornerShape(14.dp))
+                .size(42.dp)
+                .clip(RoundedCornerShape(15.dp))
                 .then(
                     if (selected) {
-                        Modifier.background(Brush.horizontalGradient(BrandButtonGradient))
+                        Modifier
+                            .background(Brush.horizontalGradient(BrandButtonGradient))
+                            .border(1.dp, BrandCoral.copy(alpha = 0.7f), RoundedCornerShape(15.dp))
                     } else {
                         Modifier
                     }
@@ -424,18 +591,9 @@ private fun LiquidGlassNavItem(
                 imageVector = icon,
                 contentDescription = label,
                 tint = if (selected) PureWhite else PureWhite.copy(alpha = 0.55f),
-                modifier = Modifier.size(19.dp)
+                modifier = Modifier.size(21.dp)
             )
         }
 
-        Spacer(modifier = Modifier.height(2.dp))
-
-        Text(
-            text = label,
-            fontSize = 10.sp,
-            fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
-            color = if (selected) PureWhite else PureWhite.copy(alpha = 0.55f),
-            letterSpacing = (-0.2).sp
-        )
     }
 }

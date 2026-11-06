@@ -34,18 +34,42 @@ jobs:
       - name: Grant Execute Permission for Gradlew
         run: chmod +x gradlew
 
+      - name: Restore protected release signing key
+        shell: bash
+        env:
+          CINEPULSE_KEYSTORE_BASE64: ${{ secrets.CINEPULSE_KEYSTORE_BASE64 }}
+        run: |
+          test -n "$CINEPULSE_KEYSTORE_BASE64"
+          printf '%s' "$CINEPULSE_KEYSTORE_BASE64" | base64 --decode > release.keystore
+
+      - name: Validate release signing credentials
+        shell: bash
+        env:
+          CINEPULSE_STORE_PASSWORD: ${{ secrets.CINEPULSE_STORE_PASSWORD }}
+          CINEPULSE_KEY_ALIAS: ${{ secrets.CINEPULSE_KEY_ALIAS }}
+          CINEPULSE_KEY_PASSWORD: ${{ secrets.CINEPULSE_KEY_PASSWORD }}
+        run: |
+          test -n "$CINEPULSE_STORE_PASSWORD"
+          test -n "$CINEPULSE_KEY_ALIAS"
+          test -n "$CINEPULSE_KEY_PASSWORD"
+
       - name: Build Release APK
         run: ./gradlew assembleRelease --stacktrace --no-daemon
+        env:
+          CINEPULSE_KEYSTORE_PATH: release.keystore
+          CINEPULSE_STORE_PASSWORD: ${{ secrets.CINEPULSE_STORE_PASSWORD }}
+          CINEPULSE_KEY_ALIAS: ${{ secrets.CINEPULSE_KEY_ALIAS }}
+          CINEPULSE_KEY_PASSWORD: ${{ secrets.CINEPULSE_KEY_PASSWORD }}
 
       - name: Identify and Rename Release APK
         run: |
           mkdir -p build-artifacts
           APK_FILE=$(find app/build/outputs/apk/release -type f -name "*.apk" | head -n 1)
           if [ -f "$APK_FILE" ]; then
-            cp "$APK_FILE" build-artifacts/cinepulse-v1.0-release.apk
+            cp "$APK_FILE" build-artifacts/cinepulse-v2.3.0-release.apk
             echo "Release APK located at: $APK_FILE"
-            ls -lh build-artifacts/cinepulse-v1.0-release.apk
-            sha256sum build-artifacts/cinepulse-v1.0-release.apk
+            ls -lh build-artifacts/cinepulse-v2.3.0-release.apk
+            sha256sum build-artifacts/cinepulse-v2.3.0-release.apk
           else
             echo "Error: Release APK not found!"
             exit 1
@@ -56,14 +80,14 @@ jobs:
           APKSIGNER=$(find $ANDROID_HOME/build-tools -name apksigner | sort -V | tail -n 1)
           if [ -n "$APKSIGNER" ]; then
             echo "Using apksigner: $APKSIGNER"
-            "$APKSIGNER" verify --verbose build-artifacts/cinepulse-v1.0-release.apk
+            "$APKSIGNER" verify --verbose build-artifacts/cinepulse-v2.3.0-release.apk
           fi
 
       - name: Upload Release APK to Workflow Artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: cinepulse-v1.0-release
-          path: build-artifacts/cinepulse-v1.0-release.apk
+          name: cinepulse-v2.3.0-release
+          path: build-artifacts/cinepulse-v2.3.0-release.apk
           if-no-files-found: error
           retention-days: 30
 
@@ -71,15 +95,15 @@ jobs:
         uses: softprops/action-gh-release@v2
         if: github.ref == 'refs/heads/main'
         with:
-          tag_name: v1.0.2
-          name: "CinePulse v1.0.2 (Resilient Network & DNS Fix)"
+          tag_name: v2.3.0
+          name: "CinePulse v2.3.0"
           overwrite_files: true
           body: |
-            ### CinePulse v1.0.2 Production Release
+            ### CinePulse v2.3.0 Production Release
 
             Unified open-source streaming ecosystem for Android and Web.
 
-            #### What's Changed in v1.0.2:
+            #### What's Changed in v2.3.0:
             - **Resilient DNS & Dynamic DNS Fallback**: Solved ISP-level DNS blocking/filtering of dynamic DNS (`*.dpdns.org`) without requiring a VPN by adding intelligent DNS-over-HTTPS (DoH) fallback and Anycast CDN IP routing.
             - **IPv4 Priority (Mobile Blackholing Fix)**: Fixed 12-second connection hangs and timeouts on 4G/5G mobile carrier networks caused by broken IPv6 routes.
             - **Cloudflare WAF Optimization**: Integrated standard browser User-Agent and verified API headers (`Referer`, `Origin`, `Accept-Language`) preventing bot challenge 403 blocks.
@@ -93,6 +117,6 @@ jobs:
             - **Developer Credits**: ImAhmedZarir (Lead Contributor), QWEA0 (Liquid Glass), deeplethe (Solid Glass), Google ExoPlayer/Media3, Coil.
             - **Privacy & Legality**: Zero tracking, educational non-commercial use, and non-hosting content disclosure (no copyrighted files hosted on server).
             - **Donations & Support**: Donate/contact via email (ahmedishtiaquezarir@gmail.com) or Telegram (https://t.me/@imahmedzarir).
-          files: build-artifacts/cinepulse-v1.0-release.apk
+          files: build-artifacts/cinepulse-v2.3.0-release.apk
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

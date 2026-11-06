@@ -1,10 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <network-security-config>
-    <!-- Allow cleartext traffic as base fallback, trust both system and user CAs -->
-    <base-config cleartextTrafficPermitted="true">
+    <!-- Production defaults: HTTPS only and system-trusted certificates. -->
+    <base-config cleartextTrafficPermitted="false">
         <trust-anchors>
             <certificates src="system" />
-            <certificates src="user" />
         </trust-anchors>
     </base-config>
 
@@ -15,7 +14,13 @@
         <domain includeSubdomains="true">aoneroom.com</domain>
         <trust-anchors>
             <certificates src="system" />
-            <certificates src="user" />
         </trust-anchors>
     </domain-config>
+
+    <!-- Allow user-installed certificates only in debuggable builds. -->
+    <debug-overrides>
+        <trust-anchors>
+            <certificates src="user" />
+        </trust-anchors>
+    </debug-overrides>
 </network-security-config>

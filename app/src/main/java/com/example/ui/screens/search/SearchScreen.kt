@@ -22,17 +22,24 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Clear
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material.icons.filled.TrendingUp
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -48,12 +55,25 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.data.model.MovieItem
 import com.example.ui.SearchUiState
+import com.example.ui.components.GlassChip
+import com.example.ui.components.GlassIconButton
 import com.example.ui.components.MoviePosterCard
 import com.example.ui.theme.*
 
 private val POPULAR_SEARCHES = listOf(
     "Breaking Bad", "Avatar", "Oppenheimer", "Batman",
     "John Wick", "Dune", "Peaky Blinders", "Anime", "Action"
+)
+
+private val SEARCH_TYPES = listOf("All", "Movie", "Series", "Anime", "Animation")
+private val SEARCH_GENRES = listOf(
+    "All", "Action", "Drama", "Comedy", "Sci-Fi", "Horror",
+    "Thriller", "Adventure", "Romance", "Fantasy", "Crime", "Mystery",
+    "Documentary", "Family", "History", "Music"
+)
+private val SEARCH_YEARS = listOf("All", "2026", "2025", "2024", "2023", "2022", "2021", "2020")
+private val SEARCH_COUNTRIES = listOf(
+    "All", "United States", "United Kingdom", "South Korea", "Japan", "India", "China"
 )
 
 // ─── Shimmer Placeholder ─────────────────────────────────────────────────────
@@ -107,17 +127,126 @@ private fun ShimmerGrid() {
     }
 }
 
+@Composable
+private fun SearchFilterGroup(
+    title: String,
+    options: List<String>,
+    selected: String,
+    onSelected: (String) -> Unit
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text(
+            text = title,
+            color = TextPrimary,
+            fontWeight = FontWeight.SemiBold,
+            fontSize = 14.sp
+        )
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            options.forEach { option ->
+                GlassChip(
+                    text = option,
+                    selected = selected == option,
+                    onClick = { onSelected(option) }
+                )
+            }
+        }
+    }
+}
+
 // ─── Main Screen ─────────────────────────────────────────────────────────────
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SearchScreen(
     uiState: SearchUiState,
     onQueryChanged: (String) -> Unit,
     onSearchSubmit: (String) -> Unit,
+    onBackClick: () -> Unit,
+    onTypeSelected: (String) -> Unit,
+    onGenreSelected: (String) -> Unit,
+    onYearSelected: (String) -> Unit,
+    onCountrySelected: (String) -> Unit,
+    onClearFilters: () -> Unit,
+    onClearSearchHistory: () -> Unit,
     onMovieClick: (MovieItem) -> Unit,
     modifier: Modifier = Modifier
 ) {
     val keyboardController = LocalSoftwareKeyboardController.current
+    var showFilterSheet by remember { mutableStateOf(false) }
+    val activeFilterCount = listOf(
+        uiState.selectedType,
+        uiState.selectedGenre,
+        uiState.selectedYear,
+        uiState.selectedCountry
+    ).count { it != "All" }
+
+    if (showFilterSheet) {
+        ModalBottomSheet(
+            onDismissRequest = { showFilterSheet = false },
+            containerColor = CinemaDark,
+            contentColor = TextPrimary,
+            dragHandle = { BottomSheetDefaults.DragHandle(color = TextSecondary) }
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState())
+                    .padding(start = 20.dp, end = 20.dp, bottom = 28.dp),
+                verticalArrangement = Arrangement.spacedBy(20.dp)
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "Filter Results",
+                        color = TextPrimary,
+                        fontSize = 20.sp,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.weight(1f)
+                    )
+                    IconButton(onClick = { showFilterSheet = false }) {
+                        Icon(
+                            imageVector = Icons.Default.Close,
+                            contentDescription = "Close filters",
+                            tint = TextSecondary
+                        )
+                    }
+                }
+
+                SearchFilterGroup("Type", SEARCH_TYPES, uiState.selectedType, onTypeSelected)
+                SearchFilterGroup("Genre", SEARCH_GENRES, uiState.selectedGenre, onGenreSelected)
+                SearchFilterGroup("Year", SEARCH_YEARS, uiState.selectedYear, onYearSelected)
+                SearchFilterGroup("Country", SEARCH_COUNTRIES, uiState.selectedCountry, onCountrySelected)
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    TextButton(
+                        onClick = onClearFilters,
+                        enabled = activeFilterCount > 0,
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Text("Clear all", color = if (activeFilterCount > 0) BrandCoral else TextSecondary)
+                    }
+                    Button(
+                        onClick = { showFilterSheet = false },
+                        modifier = Modifier.weight(1f),
+                        colors = ButtonDefaults.buttonColors(containerColor = BrandCoral)
+                    ) {
+                        Text("Done", color = PureWhite)
+                    }
+                }
+            }
+        }
+    }
 
     Column(
         modifier = modifier
@@ -126,15 +255,26 @@ fun SearchScreen(
     ) {
 
         // ── Liquid Glass Search Bar ───────────────────────────────────────────
-        Box(
+        Row(
             modifier = Modifier
                 .fillMaxWidth()
                 .statusBarsPadding()
-                .padding(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 10.dp)
-                .clip(RoundedCornerShape(999.dp))
-                .background(LiquidGlassSurface)
-                .border(1.dp, LiquidGlassBorderBrush, RoundedCornerShape(999.dp))
+                .padding(start = 8.dp, end = 16.dp, top = 8.dp, bottom = 10.dp),
+            verticalAlignment = Alignment.CenterVertically
         ) {
+            GlassIconButton(
+                icon = Icons.AutoMirrored.Filled.ArrowBack,
+                contentDescription = "Back",
+                onClick = onBackClick
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .clip(RoundedCornerShape(999.dp))
+                    .background(LiquidGlassSurface)
+                    .border(1.dp, LiquidGlassBorderBrush, RoundedCornerShape(999.dp))
+            ) {
             // Top specular sheen stripe
             Box(
                 modifier = Modifier
@@ -198,6 +338,47 @@ fun SearchScreen(
                     .fillMaxWidth()
                     .testTag("search_text_field")
             )
+            }
+        }
+
+        // ── Compact filter control ──────────────────────────────────────────
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(start = 16.dp, end = 16.dp, bottom = 8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Row(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(999.dp))
+                    .background(if (activeFilterCount > 0) BrandCoral else LiquidGlassSurface)
+                    .border(1.dp, LiquidGlassBorderBrush, RoundedCornerShape(999.dp))
+                    .clickable { showFilterSheet = true }
+                    .padding(horizontal = 14.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(7.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Tune,
+                    contentDescription = "Open filters",
+                    tint = PureWhite,
+                    modifier = Modifier.size(16.dp)
+                )
+                Text(
+                    text = if (activeFilterCount == 0) "Filters" else "Filters ($activeFilterCount)",
+                    color = PureWhite,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.SemiBold
+                )
+            }
+            if (activeFilterCount > 0) {
+                Spacer(modifier = Modifier.width(10.dp))
+                Text(
+                    text = "Refine results",
+                    color = TextSecondary,
+                    fontSize = 12.sp
+                )
+            }
         }
 
         // ── Animated Suggestions Dropdown ────────────────────────────────────
@@ -257,7 +438,9 @@ fun SearchScreen(
         AnimatedContent(
             targetState = when {
                 uiState.isSearching               -> "loading"
-                uiState.results.isNotEmpty()       -> "results"
+                uiState.filteredResults.isNotEmpty() -> "results"
+                uiState.hasActiveFilters           -> "empty_filter"
+                uiState.results.isNotEmpty()       -> "empty_filter"
                 uiState.query.isNotBlank()         -> "empty_query"
                 else                               -> "idle"
             },
@@ -274,8 +457,8 @@ fun SearchScreen(
 
                 // Results grid
                 "results" -> {
-                    val uniqueResults = remember(uiState.results) {
-                        uiState.results.distinctBy { "${it.safeSlug}_${it.subjectId}" }
+                    val uniqueResults = remember(uiState.filteredResults) {
+                        uiState.filteredResults.distinctBy { "${it.safeSlug}_${it.subjectId}" }
                     }
                     LazyVerticalGrid(
                         columns = GridCells.Adaptive(minSize = 110.dp),
@@ -302,6 +485,22 @@ fun SearchScreen(
                                 modifier = Modifier.fillMaxWidth()
                             )
                         }
+                    }
+                }
+
+                "empty_filter" -> {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(32.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = "No titles match these filters.",
+                            color = TextSecondary,
+                            style = MaterialTheme.typography.bodyMedium,
+                            textAlign = TextAlign.Center
+                        )
                     }
                 }
 
@@ -364,9 +563,72 @@ fun SearchScreen(
                 else -> {
                     Column(
                         modifier = Modifier
-                            .fillMaxWidth()
+                            .fillMaxSize()
+                            .verticalScroll(rememberScrollState())
                             .padding(horizontal = 16.dp, vertical = 4.dp)
                     ) {
+                        if (uiState.searchHistory.isNotEmpty()) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.History,
+                                    contentDescription = null,
+                                    tint = TextPrimary,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(
+                                    text = "Search History",
+                                    style = MaterialTheme.typography.titleMedium.copy(
+                                        fontWeight = FontWeight.Bold,
+                                        color = TextPrimary,
+                                        fontSize = 16.sp
+                                    )
+                                )
+                                Spacer(modifier = Modifier.weight(1f))
+                                TextButton(onClick = onClearSearchHistory) {
+                                    Text("Clear", color = BrandCoral)
+                                }
+                            }
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                uiState.searchHistory.forEach { query ->
+                                    Box(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .clip(RoundedCornerShape(14.dp))
+                                            .background(LiquidGlassSurface)
+                                            .border(1.dp, LiquidGlassBorderBrush, RoundedCornerShape(14.dp))
+                                            .clickable { onSearchSubmit(query) }
+                                    ) {
+                                        Row(
+                                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Default.History,
+                                                contentDescription = null,
+                                                tint = TextSecondary,
+                                                modifier = Modifier.size(16.dp)
+                                            )
+                                            Spacer(modifier = Modifier.width(12.dp))
+                                            Text(
+                                                text = query,
+                                                style = MaterialTheme.typography.bodyMedium.copy(
+                                                    color = TextPrimary,
+                                                    fontWeight = FontWeight.Medium
+                                                ),
+                                                modifier = Modifier.weight(1f)
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                            Spacer(modifier = Modifier.height(20.dp))
+                        }
+
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(8.dp)
