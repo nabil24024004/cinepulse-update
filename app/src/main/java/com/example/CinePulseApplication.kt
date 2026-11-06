@@ -17,6 +17,7 @@ class CinePulseApplication : Application(), ImageLoaderFactory {
 
     override fun newImageLoader(): ImageLoader {
         return ImageLoader.Builder(this)
+            .okHttpClient(NetworkClient.okHttpClient)
             // RGB_565 provides fast decoding and halves memory usage for smooth 60fps scrolling
             .bitmapConfig(Bitmap.Config.RGB_565)
             .memoryCache {

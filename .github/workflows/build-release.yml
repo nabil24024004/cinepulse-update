@@ -71,13 +71,20 @@ jobs:
         uses: softprops/action-gh-release@v2
         if: github.ref == 'refs/heads/main'
         with:
-          tag_name: v1.0.1
-          name: "CinePulse v1.0.1 (Solid & Liquid Glass Edition)"
+          tag_name: v1.0.2
+          name: "CinePulse v1.0.2 (Resilient Network & DNS Fix)"
           overwrite_files: true
           body: |
-            ### CinePulse v1.0.1 Production Release
+            ### CinePulse v1.0.2 Production Release
 
             Unified open-source streaming ecosystem for Android and Web.
+
+            #### What's Changed in v1.0.2:
+            - **Resilient DNS & Dynamic DNS Fallback**: Solved ISP-level DNS blocking/filtering of dynamic DNS (`*.dpdns.org`) without requiring a VPN by adding intelligent DNS-over-HTTPS (DoH) fallback and Anycast CDN IP routing.
+            - **IPv4 Priority (Mobile Blackholing Fix)**: Fixed 12-second connection hangs and timeouts on 4G/5G mobile carrier networks caused by broken IPv6 routes.
+            - **Cloudflare WAF Optimization**: Integrated standard browser User-Agent and verified API headers (`Referer`, `Origin`, `Accept-Language`) preventing bot challenge 403 blocks.
+            - **Network Security Configuration**: Added explicit `network_security_config.xml` to validate system and user trust anchors.
+            - **Coil ImageLoader Sync**: Wired image loading pipeline to the resilient network client for smooth poster fetching across restricted mobile connections.
 
             - **Solid Glass & Liquid Glass Design System**: Real-time backdrop blur, SDF refraction optics, tactile rim highlights, and inner hairline finishes.
             - **100% Ecosystem Symmetry**: Android client and PHP webapp share identical layout, features, and zero-emoji UI.
