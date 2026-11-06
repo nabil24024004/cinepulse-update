@@ -46,9 +46,16 @@ function cpallowed(string $url, bool $api = false): array {
     if (!$p || ($p['scheme'] ?? '') !== 'https' || isset($p['user']) || isset($p['pass']) || isset($p['fragment']) || ($p['port'] ?? 443) !== 443) throw new RuntimeException('Only HTTPS upstream URLs on port 443 are allowed', 502);
     $host = strtolower($p['host'] ?? '');
     if (!preg_match('/^[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?$/', $host) || strpos($host, '..') !== false || filter_var($host, FILTER_VALIDATE_IP)) throw new RuntimeException('Invalid upstream hostname', 502);
-    $allowed = $api ? ['movieapi.zarhosting.dpdns.org'] : array_merge(['hakunaymatata.com', 'aoneroom.com'], array_filter(array_map('trim', explode(',', getenv('CINEPULSE_CDN_HOSTS') ?: ''))));
-    foreach ($allowed as $domain) { $domain = strtolower($domain); if ($host === $domain || (!$api && substr($host, -strlen('.'.$domain)) === '.'.$domain)) return [$host, $p]; }
-    error_log('CinePulse: upstream host not allowed: '.$host.' (see CINEPULSE_CDN_HOSTS)'); throw new RuntimeException('Upstream host is not allowed', 502);
+    if ($api) {
+        if ($host === 'movieapi.zarhosting.dpdns.org') return [$host, $p];
+        error_log('CinePulse: upstream API host not allowed: '.$host);
+        throw new RuntimeException('Upstream host is not allowed', 502);
+    }
+    // For media CDNs & subtitles: allow public HTTPS hosts (block local/private networks)
+    if (in_array($host, ['localhost', 'localhost.localdomain', 'ip6-localhost', 'ip6-loopback'], true) || substr($host, -6) === '.local') {
+        throw new RuntimeException('Private upstream host is not allowed', 502);
+    }
+    return [$host, $p];
 }
 function cppublic(string $ip): bool {
     if (!filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE)) return false;
@@ -83,7 +90,7 @@ function cpscrub(string $m): string {
     return substr((string)$m, 0, 300);
 }
 function cphttps(): bool { return (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') || strtolower($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '') === 'https'; }
-function cpdirect(): bool { return in_array(getenv('CINEPULSE_PLAY_MODE') ?: 'proxy', ['auto', 'direct'], true); }
+function cpdirect(): bool { return in_array(getenv('CINEPULSE_PLAY_MODE') ?: 'auto', ['auto', 'direct'], true); }
 /** Random per-browser id (HttpOnly cookie). Relay tokens are bound to it, so a copied link is useless elsewhere. */
 function cpclient(): string {
     static $id;
@@ -143,7 +150,7 @@ function cpguard(string $action): void {
     }
     if (in_array(strtolower($_SERVER['HTTP_SEC_FETCH_DEST'] ?? ''), ['document', 'iframe', 'frame', 'embed', 'object'], true) && $action !== 'health') throw new RuntimeException('Forbidden', 403);
     if (in_array($action, ['suggest', 'feed', 'detailData', 'play', 'captions'], true) && !hash_equals(cptoken(), (string)($_SERVER['HTTP_X_CP_TOKEN'] ?? ''))) throw new RuntimeException('Forbidden', 403);
-    if ($action === 'proxy') cprate('relay', 500); elseif ($action === 'play' || $action === 'captions') cprate('play', 40); else cprate('api', 150);
+    if ($action === 'proxy') { /* streaming video chunks: no tight rate limit to prevent 502/playback stall */ } elseif ($action === 'play' || $action === 'captions') cprate('play', 60); else cprate('api', 300);
 }
 function cpheaders(): array { return ['Accept: */*', 'Accept-Encoding: identity', 'Referer: '.CP_REFERER, 'Origin: '.CP_ORIGIN]; }
 /** Bounded buffered fetch, or incremental streaming. Redirect bodies never reach the browser. */
@@ -153,10 +160,32 @@ function cphttp(string $url, array $headers = [], bool $api = false, string $met
     for ($hop=0; $hop<=4; $hop++) {
         $remaining=22-(int)(microtime(true)-$started);
         if (!$onChunk && $remaining<=0) throw new RuntimeException('Upstream redirect/fetch deadline exceeded',502);
-        [$host] = cpallowed($url, $api); $ip = cpresolve($host); $pin = strpos($ip, ':') !== false ? '['.$ip.']' : $ip;
+        [$host] = cpallowed($url, $api);
         $status = 0; $hs = []; $body = ''; $tooLarge = false; $headerDone = false; $forward = false;
         $ch = curl_init($url);
-        curl_setopt_array($ch, [CURLOPT_FOLLOWLOCATION=>false, CURLOPT_RETURNTRANSFER=>false, CURLOPT_CONNECTTIMEOUT=>10, CURLOPT_TIMEOUT=>$onChunk ? 0 : max(1,$remaining), CURLOPT_LOW_SPEED_LIMIT=>32, CURLOPT_LOW_SPEED_TIME=>30, CURLOPT_NOSIGNAL=>true, CURLOPT_PROTOCOLS=>CURLPROTO_HTTPS, CURLOPT_SSL_VERIFYPEER=>true, CURLOPT_SSL_VERIFYHOST=>2, CURLOPT_PROXY=>'', CURLOPT_RESOLVE=>[$host.':443:'.$pin], CURLOPT_ENCODING=>'', CURLOPT_HTTPHEADER=>$headers, CURLOPT_USERAGENT=>$api ? 'CinePulse-Web/2.0' : CP_UA, CURLOPT_NOBODY=>$method === 'HEAD', CURLOPT_BUFFERSIZE=>131072,
+        $ca = getenv('SSL_CERT_FILE') ?: (is_file('/data/user/0/com.agy/files/usr/etc/tls/cert.pem') ? '/data/user/0/com.agy/files/usr/etc/tls/cert.pem' : '');
+        $copts = [
+            CURLOPT_FOLLOWLOCATION=>false,
+            CURLOPT_RETURNTRANSFER=>false,
+            CURLOPT_CONNECTTIMEOUT=>15,
+            CURLOPT_TIMEOUT=>$onChunk ? 0 : max(1,$remaining),
+            CURLOPT_NOSIGNAL=>true,
+            CURLOPT_PROTOCOLS=>CURLPROTO_HTTPS,
+            CURLOPT_SSL_VERIFYPEER=>true,
+            CURLOPT_SSL_VERIFYHOST=>2,
+            CURLOPT_PROXY=>'',
+            CURLOPT_ENCODING=>'',
+            CURLOPT_HTTPHEADER=>$headers,
+            CURLOPT_USERAGENT=>$api ? 'CinePulse-Web/2.0' : CP_UA,
+            CURLOPT_NOBODY=>$method === 'HEAD',
+            CURLOPT_BUFFERSIZE=>131072,
+        ];
+        if ($ca !== '') $copts[CURLOPT_CAINFO] = $ca;
+        if (!$onChunk) {
+            $copts[CURLOPT_LOW_SPEED_LIMIT] = 32;
+            $copts[CURLOPT_LOW_SPEED_TIME] = 30;
+        }
+        curl_setopt_array($ch, $copts + [
             CURLOPT_HEADERFUNCTION=>function($c, $line) use (&$status, &$hs, &$headerDone, &$forward, $onHeaders) {
                 if (preg_match('#^HTTP/\S+\s+(\d{3})#i', $line, $m)) { $status=(int)$m[1]; $hs=[]; $headerDone=false; }
                 elseif (strpos($line, ':') !== false) { [$k,$v]=explode(':',$line,2); $hs[strtolower(trim($k))]=trim($v); }
@@ -349,7 +378,13 @@ function cprelay(): void {
     $ifRange=$_SERVER['HTTP_IF_RANGE']??''; if ($ifRange!=='' && !preg_match('/[\r\n]/',$ifRange) && strlen($ifRange)<200) $headers[]='If-Range: '.$ifRange;
     @set_time_limit(0); @ini_set('zlib.output_compression','0'); ignore_user_abort(false); if (session_status()===PHP_SESSION_ACTIVE) session_write_close();
     while (ob_get_level()>0) { if (!@ob_end_clean()) break; }
-    $sent=false; $bad=''; $download=''; // web build never offers file downloads
+    $sent=false; $bad=''; $download='';
+    $dl = cpq('dl', '');
+    if ($dl === '1') {
+        $fn = cpq('fn', '');
+        $download = preg_replace('/[^a-zA-Z0-9._ -]/', '_', $fn) ?: 'video.mp4';
+        if (!preg_match('/\.mp4$/i', $download)) $download .= '.mp4';
+    }
     try {
         cphttp($url,$headers,false,$method,
             function($status,$hs) use (&$sent,&$bad,$download) {
@@ -472,8 +507,18 @@ JS;
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="CinePulse">
-<meta name="description" content="CinePulse — stream movies, series and anime.">
-<title>CinePulse</title>
+<title>CinePulse — Stream Movies, TV Series &amp; Anime</title>
+<meta name="description" content="CinePulse — Stream high quality movies, TV series, and anime with Apple liquid glass experience.">
+<meta name="keywords" content="cinepulse, streaming, movies, tv series, anime, watch online, hd movies, stream free">
+<meta property="og:title" content="CinePulse — Stream Movies, TV Series &amp; Anime">
+<meta property="og:description" content="Stream high quality movies, TV series, and anime with Apple liquid glass experience.">
+<meta property="og:type" content="website">
+<meta property="og:image" content="/faviconandlogo.jpg">
+<meta property="og:site_name" content="CinePulse">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="CinePulse — Stream Movies, TV Series &amp; Anime">
+<meta name="twitter:description" content="Stream high quality movies, TV series, and anime with Apple liquid glass experience.">
+<meta name="twitter:image" content="/faviconandlogo.jpg">
 <link rel="icon" href="/faviconandlogo.jpg" type="image/jpeg">
 <link rel="apple-touch-icon" href="/faviconandlogo.jpg">
 <link rel="manifest" href="?action=manifest">
@@ -497,6 +542,12 @@ svg.i.f{fill:currentColor;stroke:none}
 .lg::after{content:"";position:absolute;inset:0;border-radius:inherit;pointer-events:none;background:radial-gradient(160px circle at var(--gx,25%) var(--gy,15%),rgba(255,255,255,.22),rgba(255,255,255,.04) 45%,transparent 70%)}
 .lite .lg{-webkit-backdrop-filter:blur(14px);backdrop-filter:blur(14px);box-shadow:0 6px 18px rgba(0,0,0,.5),inset 0 1px 1px rgba(255,255,255,.35),inset 0 0 0 1px rgba(255,255,255,.12)}
 .lite .lg::after{display:none}
+.ultralight .lg,.ultralight .glass,.ultralight .panel,.ultralight .sheet,.ultralight .sbar,.ultralight .sugs,.ultralight #pUI .lg,.ultralight #pMenu,.ultralight #pErr,.ultralight #pCap,.ultralight #toast{-webkit-backdrop-filter:none!important;backdrop-filter:none!important;background:rgba(18,18,22,.94)!important;box-shadow:0 4px 16px rgba(0,0,0,.5),inset 0 0 0 1px rgba(255,255,255,.08)!important}
+.ultralight .lg::before,.ultralight .lg::after{display:none!important}
+.ultralight .lens{-webkit-backdrop-filter:none!important;backdrop-filter:none!important;background:rgba(255,255,255,.18)!important}
+svg.i.star{width:12px;height:12px;fill:#ffd700;stroke:none;display:inline-block;vertical-align:-1px;margin-right:3px}
+.bdg{display:inline-flex;align-items:center}
+.chip{display:inline-flex;align-items:center}
 .lg-solid{background:rgba(255,255,255,.94);color:#000;-webkit-backdrop-filter:none;backdrop-filter:none;box-shadow:0 10px 30px rgba(0,0,0,.5),inset 0 -2px 6px rgba(0,0,0,.12)}
 .lg-solid::after{display:none}
 .press{transition:transform .35s var(--spring),background .2s}
@@ -758,7 +809,9 @@ main{min-height:100vh;min-height:100dvh}
 #pMenu.on{opacity:1;visibility:visible;transform:none;transition:opacity .2s,transform .4s var(--spring)}
 #pMenu h4{padding:10px 14px 6px;font-size:12px;letter-spacing:.12em;text-transform:uppercase;color:var(--fg3)}
 #pMenu button{display:flex;align-items:center;justify-content:space-between;gap:10px;width:100%;text-align:left;padding:12px 14px;border-radius:19px;font-size:15px;font-weight:600}
-#pMenu button.on::after{content:"";display:inline-block;width:6px;height:12px;border:solid #fff;border-width:0 2.5px 2.5px 0;transform:rotate(45deg);margin-left:auto;margin-right:4px}
+#pMenu button:hover{background:rgba(255,255,255,.12)}
+#pMenu button small{color:var(--fg2);font-weight:500;font-size:12.5px}
+#pMenu button.on::after{content:"";width:6px;height:11px;border:solid #fff;border-width:0 2px 2px 0;transform:rotate(45deg);margin-right:4px;display:inline-block}
 #pMenu .none{padding:14px;color:var(--fg2);font-size:14px}
 @media (max-width:640px){#pMenu{top:auto;bottom:calc(env(safe-area-inset-bottom,0px) + 106px);right:50%;transform:translate(50%,12px) scale(.96);transform-origin:bottom center}#pMenu.on{transform:translate(50%,0)}#pTitle{display:none}.p-top .sp{display:block}#pTools{padding:0 4px}#pTools .ib{width:36px;height:36px}#pCap{height:54px;padding:0 18px;gap:10px}}
 #pSpin{position:absolute;left:50%;top:50%;width:64px;height:64px;margin:-32px 0 0 -32px;border-radius:50%;opacity:0;pointer-events:none;transition:opacity .25s;border:3px solid rgba(255,255,255,.18);border-top-color:#fff;animation:spin .8s linear infinite;animation-play-state:paused}
@@ -807,15 +860,15 @@ main{min-height:100vh;min-height:100dvh}
 /* settings */
 .sgroup{padding:0 var(--pad);max-width:860px;display:grid;gap:22px;margin-bottom:60px}
 .sgroup h2{font-size:13px;letter-spacing:.12em;text-transform:uppercase;color:var(--fg3);font-weight:700;margin:0 0 -10px 6px}
-.panel{border-radius:26px;background:linear-gradient(180deg,rgba(255,255,255,.08) 0%,rgba(255,255,255,.03) 100%),#121214;box-shadow:inset 0 1px 0 rgba(255,255,255,.24),inset 0 0 0 1px rgba(255,255,255,.09),inset 0 -1px 0 rgba(0,0,0,.35),0 16px 36px -8px rgba(0,0,0,.6);overflow:hidden}
+.panel{border-radius:26px;background:rgba(255,255,255,.06);box-shadow:inset 0 1px 1px rgba(255,255,255,.16),inset 0 0 0 1px rgba(255,255,255,.08);overflow:hidden}
 .srow{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:16px 18px;flex-wrap:wrap}
 .srow+.srow{border-top:1px solid rgba(255,255,255,.07)}
 .srow b{display:block;font-size:15.5px;letter-spacing:-.01em}
 .srow small{display:block;color:var(--fg3);font-size:12.5px;margin-top:2px;max-width:420px}
-.seg.flat{background:rgba(255,255,255,.08);box-shadow:inset 0 1px 0 rgba(255,255,255,.18),inset 0 0 0 1px rgba(255,255,255,.1)}
+.seg.flat{background:rgba(255,255,255,.08);box-shadow:inset 0 0 0 1px rgba(255,255,255,.1)}
 .seg.flat button.on{background:#fff;color:#000}
-.sbtn{height:36px;padding:0 16px;border-radius:12px;background:rgba(255,255,255,.08);color:#fff;font-size:13px;font-weight:700;box-shadow:inset 0 1px 0 rgba(255,255,255,.22),inset 0 0 0 1px rgba(255,255,255,.08);transition:all .2s ease}
-.sbtn:hover{background:rgba(255,255,255,.15);box-shadow:inset 0 1px 0 rgba(255,255,255,.32),inset 0 0 0 1px rgba(255,255,255,.14)}
+.sbtn{padding:9px 16px;border-radius:999px;background:rgba(255,255,255,.1);font-size:13.5px;font-weight:600;box-shadow:inset 0 0 0 1px rgba(255,255,255,.1)}
+.sbtn:hover{background:rgba(255,255,255,.18)}
 .app{display:flex;gap:16px;align-items:center;padding:18px}
 .app .mk2{flex:none;width:52px;height:52px;border-radius:16px;display:grid;place-items:center;background:rgba(255,255,255,.1)}
 .app .mk2 svg.i{width:26px;height:26px}
@@ -920,6 +973,7 @@ img,video,a{-webkit-user-drag:none}
 <symbol id="i-trash" viewBox="0 0 24 24"><path d="M4.5 7h15M10 7V4.5h4V7M6.5 7l.8 12a1.5 1.5 0 0 0 1.5 1.4h6.4a1.5 1.5 0 0 0 1.5-1.4l.8-12M10 11v6M14 11v6"/></symbol>
 <symbol id="i-save" viewBox="0 0 24 24"><path d="M12 3.5v10M8 10l4 4 4-4"/><rect x="4" y="15" width="16" height="5" rx="2"/></symbol>
 <symbol id="i-chev" viewBox="0 0 24 24"><path d="M9 5l7 7-7 7"/></symbol>
+<symbol id="i-star" viewBox="0 0 24 24"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" fill="currentColor"/></symbol>
 </defs></svg>
 
 <header id="nav">
@@ -933,7 +987,6 @@ img,video,a{-webkit-user-drag:none}
     <a href="?action=settings" data-r="settings" data-nav="settings">Settings</a>
   </nav>
   <div class="nav-r">
-    <a class="lg ib press" id="btnRelease" href="https://github.com/ImAhmedZarir/cinepulse/releases/" target="_blank" rel="noopener noreferrer" aria-label="Download App Releases"><svg class="i"><use href="#i-dl"/></svg></a>
     <button class="lg pill press hide" id="btnInstall" aria-label="Install app"><span>Install App</span></button>
     <button class="lg ib press" id="btnSearch" aria-label="Search"><svg class="i"><use href="#i-search"/></svg></button>
   </div>
@@ -1240,7 +1293,6 @@ function esc(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'
 function fmtT(s){s=Math.max(0,Math.floor(s||0));var h=(s/3600)|0,m=((s%3600)/60)|0,x=s%60;return h?h+':'+(m<10?'0':'')+m+':'+(x<10?'0':'')+x:m+':'+(x<10?'0':'')+x}
 function fmtB(n){n=+n;if(!n||n<0)return'';var u=['B','KB','MB','GB','TB'],i=0;while(n>=1024&&i<4){n/=1024;i++}return(n>=100||i===0?n.toFixed(0):n.toFixed(1))+' '+u[i]}
 function icon(n,c){return'<svg class="i'+(c?' '+c:'')+'"><use href="#i-'+n+'"/></svg>'}
-function starIcon(){return'<svg class="i" style="width:11px;height:11px;display:inline-block;vertical-align:-1px;margin-right:3px" viewBox="0 0 24 24"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" fill="currentColor"/></svg>'}
 function set(el,v){el.style.setProperty('--p',v)}
 
 /* Glass: real refraction on Chromium, frosted fallback elsewhere, plain CSS blur in Lite mode */
@@ -1249,10 +1301,12 @@ function saveSet(){LS.set('cp:set',SET)}
 var APK='https://github.com/ImAhmedZarir/cinepulse/releases/';
 document.addEventListener('error',function(e){var t=e.target;if(t&&t.tagName==='IMG'&&(t.getAttribute('src')==='/faviconandlogo.jpg'||(t.parentNode&&t.parentNode.classList.contains('av'))))t.style.display='none'},true);
 var nv=navigator,pref=LS.get('cp:glass','auto');
-var LITE=pref==='lite'||(pref==='auto'&&((nv.deviceMemory&&nv.deviceMemory<=2)||(nv.hardwareConcurrency&&nv.hardwareConcurrency<=2)||(nv.connection&&nv.connection.saveData)));
+var ULTRALIGHT=pref==='ultralight';
+var LITE=ULTRALIGHT||pref==='lite'||(pref==='auto'&&((nv.deviceMemory&&nv.deviceMemory<=3)||(nv.hardwareConcurrency&&nv.hardwareConcurrency<=4)||(nv.connection&&nv.connection.saveData)));
 document.documentElement.classList.toggle('lite',LITE);
+document.documentElement.classList.toggle('ultralight',ULTRALIGHT);
 var GS={scale:-92,chroma:5,border:.13,mapBlur:6,blur:2,saturate:1.6},GL={scale:-124,chroma:7,border:.07,mapBlur:12,blur:3,saturate:1.6};
-function glass(el,big){if(!el||LITE||!window.liquidGlass||el._lg)return;try{el._lg=window.liquidGlass(el,big?GL:GS)}catch(e){}}
+function glass(el,big){if(!el||LITE||ULTRALIGHT||!window.liquidGlass||el._lg)return;try{el._lg=window.liquidGlass(el,big?GL:GS)}catch(e){}}
 function unglass(el){if(el&&el._lg){el._lg.destroy();el._lg=null}}
 
 /* Toast */
@@ -1310,7 +1364,7 @@ document.addEventListener('load',function(e){if(e.target.tagName==='IMG')e.targe
 /* Cards */
 function card(it,extra){
   return'<a class="card" href="?action=detail&amp;slug='+encodeURIComponent(it.slug)+'" data-r="detail" data-slug="'+esc(it.slug)+'"><div class="ph"><img alt="" decoding="async" data-src="'+esc(it.poster)+'">'+
-    (it.rating?'<span class="bdg">'+starIcon()+esc(it.rating)+'</span>':'')+(extra||'')+'</div><div class="t">'+esc(it.title)+'</div><div class="s">'+esc([it.year,it.type==='tv'?'Series':'Movie'].filter(Boolean).join(' · '))+'</div></a>';
+    (it.rating?'<span class="bdg">'+icon('star','star')+'<span>'+esc(it.rating)+'</span></span>':'')+(extra||'')+'</div><div class="t">'+esc(it.title)+'</div><div class="s">'+esc([it.year,it.type==='tv'?'Series':'Movie'].filter(Boolean).join(' · '))+'</div></a>';
 }
 /* Skeletons — each page gets a skeleton with the exact same geometry as its real content */
 function skCards(n,cls){var h='';for(var i=0;i<n;i++)h+='<div class="card skc"><div class="ph sk"></div><div class="t sk"></div><div class="s sk"></div></div>';return cls?'<div class="'+cls+'">'+h+'</div>':h}
@@ -1406,30 +1460,14 @@ function railHTML(label,items,extraFn){
   return'<section class="rsec"><h2>'+esc(label)+'</h2><div class="rwrap"><div class="rail">'+items.map(function(it){return card(it,extraFn&&extraFn(it))}).join('')+'</div>'+
     '<button class="lg ib arrow l" aria-label="Scroll left" data-dir="-1">'+icon('back')+'</button><button class="lg ib arrow r" aria-label="Scroll right" data-dir="1">'+icon('chev')+'</button></div></section>';
 }
-function offlineBannerHTML(){
-  if(navigator.onLine)return'';
-  return'<div class="panel sg-alert" style="margin:calc(env(safe-area-inset-top,0px) + 84px) var(--pad) 14px;border:1px solid rgba(238,30,80,.4);background:rgba(238,30,80,.12);border-radius:18px;padding:14px 18px;display:flex;align-items:center;justify-content:space-between;gap:12px">'+
-    '<div><b style="color:#fff;font-size:14.5px;display:block">Offline Mode</b><small style="color:var(--fg2)">No internet connection detected. You can browse cached titles and local library.</small></div></div>';
-}
-function getStartedHTML(){
-  if(LS.get('cp:getstarted_dismissed'))return'';
-  return'<div class="panel sg-banner" id="gsBanner" style="margin:calc(env(safe-area-inset-top,0px) + 84px) var(--pad) 16px;border:1px solid rgba(255,255,255,.15);border-radius:24px;padding:22px;background:rgba(255,255,255,.06);box-shadow:0 12px 36px rgba(0,0,0,.6)">'+
-    '<div style="display:flex;align-items:flex-start;justify-content:space-between;gap:14px">'+
-      '<div><span class="chip" style="color:var(--fg);font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;margin-bottom:8px;display:inline-block">Welcome to CinePulse</span>'+
-      '<h3 style="font-size:19px;font-weight:800;color:#fff;margin-bottom:6px">Stream movies, series and anime</h3>'+
-      '<p style="color:var(--fg2);font-size:13.5px;line-height:1.5;max-width:560px">Engineered with Solid Glass &amp; Liquid Glass architecture. Zero tracking, ultra-fast streaming, and homepage caching.</p></div>'+
-      '<button class="ib" id="gsClose" style="width:36px;height:36px;background:rgba(255,255,255,.08);color:var(--fg2);border-radius:50%" aria-label="Dismiss">'+icon('x')+'</button></div>'+
-    '<div style="display:flex;gap:10px;margin-top:16px;flex-wrap:wrap"><a class="btn sm lg-solid press" href="?action=browse&amp;type=movies" data-r="browse" data-type="movies">Explore Movies</a><a class="btn sm lg press" href="?action=browse&amp;type=tv-series" data-r="browse" data-type="tv-series">Browse Series</a></div></div>';
-}
 function renderHome(h){
   var cw=cwList(),rails='';
   if(cw.length)rails+=railHTML('Continue Watching',cw,cwExtra);
   h.rails.forEach(function(r){rails+=railHTML(r.label,r.items)});
-  vHome.innerHTML=offlineBannerHTML()+getStartedHTML()+'<section class="hero" id="hero"><div class="hero-bg"><img alt="" class="a"><img alt="" class="b"></div><div class="hero-shade"></div>'+
+  vHome.innerHTML='<section class="hero" id="hero"><div class="hero-bg"><img alt="" class="a"><img alt="" class="b"></div><div class="hero-shade"></div>'+
     '<div class="hero-copy" id="hCopy"><div class="eyebrow" id="hEye"></div><h1 id="hTitle"></h1><div class="meta" id="hMeta"></div><p id="hDesc"></p>'+
     '<div class="acts"><a class="btn lg-solid press" id="hPlay" href="?" data-r="watch">'+icon('play','f')+'Play</a><a class="btn lg press" id="hMore" href="?" data-r="detail">'+icon('info')+'More Info</a></div></div>'+
     '<div class="dots lg" id="hDots"></div></section><div class="rails">'+rails+'</div>';
-  var gsc=$('#gsClose');if(gsc)gsc.onclick=function(){LS.set('cp:getstarted_dismissed',true);var b=$('#gsBanner');if(b)b.remove()};
   $$('.pbar i',vHome).forEach(function(i){set(i,i.getAttribute('data-p'))});
   lazy(vHome);glass($('#hMore'));glass($('#hDots'));
   hero.items=h.hero;hero.i=0;hero.layer=0;
@@ -1465,7 +1503,7 @@ function setHero(i,first){
   var copy=$('#hCopy');if(!first)copy.classList.add('sw');
   function paintText(){
     $('#hEye').textContent=it.type==='tv'?'Series':'Movie';$('#hTitle').textContent=it.title;
-    $('#hMeta').innerHTML=[it.rating?'<span class="chip">'+starIcon()+esc(it.rating)+'</span>':'',it.year?'<span>'+esc(it.year)+'</span>':'',it.genre?'<span>'+esc(String(it.genre).split(',').slice(0,3).join(' · '))+'</span>':''].join('');
+    $('#hMeta').innerHTML=[it.rating?'<span class="chip">'+icon('star','star')+'<span>'+esc(it.rating)+'</span></span>':'',it.year?'<span>'+esc(it.year)+'</span>':'',it.genre?'<span>'+esc(String(it.genre).split(',').slice(0,3).join(' · '))+'</span>':''].join('');
     $('#hDesc').textContent=it.description||'';
     $('#hPlay').setAttribute('data-slug',it.slug);$('#hMore').setAttribute('data-slug',it.slug);
     $$('#hDots button').forEach(function(b,k){b.classList.toggle('on',k===i)});copy.classList.remove('sw');
@@ -1590,7 +1628,7 @@ function viewDetail(p){
 function epLabel(d,c){return d.series?'S'+c.se+' E'+c.ep:''}
 function drawDetail(d,quiet){
   D.d=d;var lw=lastWatched(d);D.se=lw&&lw.se?lw.se:(d.seasons[0]?d.seasons[0].se:1);
-  var tags=[d.rating?'<span class="chip">'+starIcon()+esc(d.rating)+'</span>':'',d.year?'<span>'+esc(d.year)+'</span>':'',d.type==='tv'?'<span>Series</span>':'<span>Movie</span>',d.genre?'<span>'+esc(String(d.genre).split(',').slice(0,3).join(' · '))+'</span>':'',d.country?'<span>'+esc(d.country)+'</span>':''].join('');
+  var tags=[d.rating?'<span class="chip">'+icon('star','star')+'<span>'+esc(d.rating)+'</span></span>':'',d.year?'<span>'+esc(d.year)+'</span>':'',d.type==='tv'?'<span>Series</span>':'<span>Movie</span>',d.genre?'<span>'+esc(String(d.genre).split(',').slice(0,3).join(' · '))+'</span>':'',d.country?'<span>'+esc(d.country)+'</span>':''].join('');
   var playLbl=lw&&lw.t>10?('Resume'+(d.series?' '+epLabel(d,lw):'')):(lw&&d.series?'Play '+epLabel(d,lw):'Play');
   var h='<div class="view"><div class="backdrop"><img alt="" data-src="'+esc(d.still||d.poster)+'"></div><div class="dbody"><h1>'+esc(d.title)+'</h1><div class="meta">'+tags+'</div><p class="ov">'+esc(d.description)+'</p>'+
     '<div class="acts"><a class="btn lg-solid press" id="dPlay" href="?" data-r="watch" data-slug="'+esc(d.slug)+'">'+icon('play','f')+'<span>'+playLbl+'</span></a>'+
@@ -1610,18 +1648,19 @@ function drawDetail(d,quiet){
   glass($('#dList'));glass($('#dDl'));glass($('#seaSeg'));
   if(d.series)drawEps(30);
   $('#dList').onclick=function(){toggleList(d);this.innerHTML=icon(inList(d.slug)?'check':'plus')+'<span>My List</span>'};
-  $('#dDl').onclick=openAppSheet;
+  $('#dDl').onclick=function(){openDownloadSheet(d,D.se,1)};
   if($('#seaSeg'))$('#seaSeg').onclick=function(e){var b=e.target.closest('button');if(!b)return;D.se=+b.getAttribute('data-se');$$('#seaSeg button').forEach(function(x){x.classList.toggle('on',x===b)});drawEps(30)};
 }
 function drawEps(limit){
   var d=D.d,s=d.seasons.filter(function(x){return x.se===D.se})[0];if(!s)return;var box=$('#eps'),n=Math.min(s.count,limit),h='';
   for(var e=1;e<=n;e++){var r=LS.get(posKey(d.slug,D.se,e),null),pr=r&&r.d?Math.min(1,r.t/r.d):0;
-    h+='<div class="ep"><a class="go" href="?" data-r="watch" data-slug="'+esc(d.slug)+'" data-se="'+D.se+'" data-ep="'+e+'"><b>Episode '+e+'</b><span>'+(pr>.9?'Watched':pr>0?Math.round(pr*100)+'% watched':'S'+D.se+' · E'+e)+'</span></a>'+(pr>0?'<div class="pbar"><i data-p="'+pr+'"></i></div>':'')+'</div>'}
+    h+='<div class="ep"><a class="go" href="?" data-r="watch" data-slug="'+esc(d.slug)+'" data-se="'+D.se+'" data-ep="'+e+'"><b>Episode '+e+'</b><span>'+(pr>.9?'Watched':pr>0?Math.round(pr*100)+'% watched':'S'+D.se+' · E'+e)+'</span></a><button class="dlb press" aria-label="Download episode" data-dl-se="'+D.se+'" data-ep="'+e+'">'+icon('dl')+'</button>'+(pr>0?'<div class="pbar"><i data-p="'+pr+'"></i></div>':'')+'</div>'}
   box.innerHTML=h;$$('.pbar i',box).forEach(function(i){set(i,i.getAttribute('data-p'))});
   $('#epMore').innerHTML=s.count>n?'<button class="btn sm lg press more" id="moreEp">Show all '+s.count+' episodes</button>':'';
   if($('#moreEp')){glass($('#moreEp'));$('#moreEp').onclick=function(){drawEps(s.count)}}
 }
 vMain.addEventListener('click',function(e){
+  var dlb=e.target.closest('button.dlb');if(dlb){e.preventDefault();var s=+dlb.getAttribute('data-dl-se')||D.se||1,ep=+dlb.getAttribute('data-ep')||1;openDownloadSheet(D.d,s,ep);return}
   var g=e.target.closest('a.go[data-ep]');if(g){e.preventDefault();go({action:'watch',slug:g.getAttribute('data-slug'),se:g.getAttribute('data-se'),ep:g.getAttribute('data-ep')},playerOpen)}
 });
 
@@ -1632,9 +1671,33 @@ function hideSheet(force){if(shLock&&!force)return;shLock=false;shW.classList.re
 shW.addEventListener('click',function(e){if(e.target===shW)hideSheet()});
 sh.addEventListener('click',function(e){if(e.target.closest('[data-x]'))hideSheet(true)});
 var LOGO='<div class="mk"><img src="/faviconandlogo.jpg" alt="" width="64" height="64"></div>';
-/* Downloads live in the open-source Android app */
+/* Direct browser download sheet with quality choices */
+function openDownloadSheet(d,se,ep){
+  d=d||P.d||D.d;if(!d)return;
+  var isSeries=!!d.series,s=se||(isSeries?(P.se||D.se||1):0),e=ep||(isSeries?(P.ep||1):0);
+  var epStr=isSeries?' - S'+s+'E'+e:'';
+  var filename=(d.title||'video').replace(/[/\\?%*:|"<>]/g,'_')+epStr+'.mp4';
+  showSheet(LOGO+'<h3>Download</h3><p>Fetching download links for '+esc(d.title+epStr)+'…</p><div class="sentinel"><div class="sk ln" style="width:60%"></div></div>');
+  var pr={action:'play',slug:d.slug};if(isSeries){pr.se=s;pr.ep=e}if(d.id)pr.id=d.id;
+  api(pr,0).then(function(res){
+    var srcs=res.sources||[];
+    if(!srcs.length){
+      showSheet(LOGO+'<h3>Download Unavailable</h3><p>No downloadable MP4 streams found for this selection.</p><div class="row"><button class="btn lg press" data-x="1">Close</button></div>');
+      return;
+    }
+    var rows=srcs.map(function(src){
+      var resLabel=esc(src.resolution||'Auto');
+      var sz=esc(/^\d+$/.test(src.size)?fmtB(src.size):(src.size||''));
+      var dlUrl=(src.proxy||src.url)+'&dl=1&fn='+encodeURIComponent(filename);
+      return '<a class="qopt press" href="'+dlUrl+'" download="'+esc(filename)+'" target="_blank" rel="noopener noreferrer"><span>'+icon('dl')+' '+resLabel+'</span>'+(sz?'<small>'+sz+'</small>':'')+'</a>';
+    }).join('');
+    showSheet(LOGO+'<h3>Download '+esc(isSeries?d.title+' (S'+s+' E'+e+')':d.title)+'</h3><p>Select quality to start downloading directly:</p><div class="row" style="margin-top:14px;gap:8px">'+rows+'</div><div class="row" style="margin-top:14px"><button class="btn lg press" data-x="1">Cancel</button></div>');
+  }).catch(function(err){
+    showSheet(LOGO+'<h3>Download Error</h3><p>'+esc(err.message||'Failed to load streams')+'</p><div class="row"><button class="btn lg press" data-x="1">Close</button></div>');
+  });
+}
 function openAppSheet(){
-  showSheet(LOGO+'<h3>Downloads are in the Android app</h3><p>Offline downloads are only available in the open-source CinePulse Android app. Grab the latest APK from GitHub.</p><div class="row"><a class="btn lg-solid press" href="'+APK+'" target="_blank" rel="noopener noreferrer">'+icon('dl')+'Get the Android app</a><button class="btn lg press" data-x="1">Not now</button></div>');
+  openDownloadSheet();
 }
 
 /* ═════════ Settings ═════════ */
@@ -1644,34 +1707,22 @@ function viewSettings(){
     return'<div class="srow"><div><b>'+r.t+'</b>'+(r.h?'<small>'+r.h+'</small>':'')+'</div><div class="seg flat" data-k="'+r.k+'">'+r.o.map(function(o){return'<button data-v="'+o[0]+'" class="'+(String(r.v)===o[0]?'on':'')+'">'+o[1]+'</button>'}).join('')+'</div></div>'}).join('')};
   var h='<div class="view"><div class="pagehead"><div><h1>Settings</h1><p>Make CinePulse yours.</p></div></div><div class="sgroup">'+
    '<h2>Appearance</h2><div class="panel">'+rows([
-     {t:'Glass effects',h:'Auto picks the lightest mode your device handles. Lite uses the least memory.',k:'glass',v:pref,o:[['auto','Auto'],['full','Full'],['lite','Lite']]},
+     {t:'Glass effects',h:'Auto picks the lightest mode your device handles. Ultra Light uses zero blur for maximum mobile speed.',k:'glass',v:pref,o:[['auto','Auto'],['full','Full'],['lite','Lite'],['ultralight','Ultra Light']]},
      {t:'Banner slideshow',h:'Automatically rotate the featured titles on Home.',k:'heroauto',v:SET.heroauto?'1':'0',o:[['1','On'],['0','Off']]}])+'</div>'+
    '<h2>Playback</h2><div class="panel">'+rows([
      {t:'Autoplay next episode',h:'Continue straight into the next episode.',k:'autonext',v:SET.autonext?'1':'0',o:[['1','On'],['0','Off']]},
      {t:'Subtitle size',h:'Applies to the subtitles shown on the video.',k:'cue',v:SET.cue,o:[['.8','Small'],['1','Medium'],['1.3','Large']]},
      {t:'Default quality',h:'Used whenever a stream starts. You can still switch inside the player.',k:'quality',v:q,o:[['','Auto'],['1080p','1080p'],['720p','720p'],['480p','480p']]}])+'</div>'+
    '<h2>Install</h2><div class="panel app"><div class="mk2">'+icon('plus')+'</div><div><b>Add CinePulse to your device</b><small>'+(standalone?'You\'re using the installed app.':'Install it like an app — its own window, no browser bars, one tap to open.')+'</small></div>'+(standalone?'':'<button class="btn sm lg-solid press" id="setInstall">Install</button>')+'</div>'+
-   '<h2>Your data &amp; Cache</h2><div class="panel">'+
-     '<div class="srow"><div><b>Get Started banner</b><small>Display the welcome &amp; quick-start banner on Home again.</small></div><button class="sbtn" data-do="reset-gs">Show banner</button></div>'+
-     '<div class="srow"><div><b>Home cache</b><small>Clear locally cached homepage feed for instant refresh.</small></div><button class="sbtn" data-do="cache">Clear cache</button></div>'+
-     '<div class="srow"><div><b>Watch history</b><small>Clears Continue Watching and saved positions on this device.</small></div><button class="sbtn" data-do="hist">Clear</button></div>'+
+   '<h2>Your data</h2><div class="panel"><div class="srow"><div><b>Watch history</b><small>Clears Continue Watching and saved positions on this device.</small></div><button class="sbtn" data-do="hist">Clear</button></div>'+
      '<div class="srow"><div><b>My List</b><small>Removes every saved title from your list.</small></div><button class="sbtn" data-do="list">Clear</button></div>'+
      '<div class="srow"><div><b>Reset settings</b><small>Back to the defaults.</small></div><button class="sbtn" data-do="reset">Reset</button></div></div>'+
-   '<h2>Downloads</h2><div class="panel app"><div class="mk2">'+icon('dl')+'</div><div><b>Android app &amp; Offline Player</b><small>Full offline downloads and media manager operate in the CinePulse Android app.</small></div><a class="btn sm lg-solid press" href="'+APK+'" target="_blank" rel="noopener noreferrer">Get the app</a></div>'+
-   '<h2>About &amp; Developer Credits</h2><div class="panel">'+
-     '<div class="srow"><div><b>Architecture &amp; Development</b><small>Designed &amp; built by <a class="link" href="https://ahmedishtiaquezarir.pro.bd/" target="_blank" rel="noopener noreferrer">ImAhmedZarir (Ahmed Ishtiaque Zarir)</a></small></div><button class="sbtn" data-do="credit">Full credits</button></div>'+
-     '<div class="srow"><div><b>Liquid Glass Engine</b><small>Android Glassmorphism components by QWEA0</small></div></div>'+
-     '<div class="srow"><div><b>Solid Glass Tokens</b><small>Physical edge &amp; refraction specification by deeplethe</small></div></div>'+
-     '<div class="srow"><div><b>Media Engine &amp; Pipeline</b><small>Google ExoPlayer / Media3 &amp; Coil image loader</small></div></div></div>'+
-   '<h2>Support Developer &amp; Donations</h2><div class="panel">'+
-     '<div class="srow"><div><b>Donate &amp; Inquiries</b><small>Help upgrade from free hosting to dedicated cloud servers: <a class="link" href="mailto:ahmedishtiaquezarir@gmail.com">ahmedishtiaquezarir@gmail.com</a></small></div></div>'+
-     '<div class="srow"><div><b>Telegram Contact</b><small><a class="link" href="https://t.me/@imahmedzarir" target="_blank" rel="noopener noreferrer">https://t.me/@imahmedzarir</a></small></div></div></div>'+
-   '<h2>Privacy, Legal Terms &amp; Hosting</h2><div class="panel"><div class="srow"><div><b>Non-Hosting Policy</b><small>CinePulse and author do NOT host or stream copyrighted media. The API exclusively indexes public metadata; streams resolve client-side.</small></div></div>'+
-     '<div class="srow"><div><b>Free Cloud Hosting &amp; Regional DNS</b><small>Hosted on free community tier. If blocked by regional ISPs, use custom DNS (Cloudflare 1.1.1.1, Google 8.8.8.8) or a VPN.</small></div></div>'+
-     '<div class="srow"><div><b>Zero Tracking</b><small>No user tracking, no telemetry, and no watch history sent to external servers.</small></div></div>'+
-     '<div class="srow"><div><b>Non-Commercial Use</b><small>CinePulse is free to use strictly for educational non-commercial purposes.</small></div></div>'+
-     '<div class="srow"><div><b>Client Security Notice</b><small>Client source code is private and client connections cannot be cryptographically secured on untrusted environments.</small></div></div></div>'+
-   '<h2>Keyboard shortcuts</h2><div class="panel"><div class="srow"><small class="keys"><b>Space / K</b> play · <b>&larr; &rarr;</b> &plusmn;5s · <b>J L</b> &plusmn;10s · <b>&uarr; &darr;</b> volume · <b>M</b> mute · <b>F</b> fullscreen · <b>C</b> subtitles · <b>N</b> next episode · <b>/</b> search</small></div></div></div></div>';
+   '<h2>Downloads</h2><div class="panel app"><div class="mk2">'+icon('dl')+'</div><div><b>Android app</b><small>Downloads work only in the open-source Android app. Get the latest release on GitHub.</small></div><a class="btn sm lg-solid press" href="'+APK+'" target="_blank" rel="noopener noreferrer">Get the app</a></div>'+
+   '<h2>Support &amp; Feedback</h2><div class="panel">'+
+     '<div class="srow"><div><b>Report Bugs &amp; Broken Streams</b><small>Found an issue, stream problem, or want to request a movie or series?</small></div><a class="sbtn" href="https://github.com/ImAhmedZarir/cinepulse/issues" target="_blank" rel="noopener noreferrer">Report Issue</a></div>'+
+     '<div class="srow"><div><b>Developer Contact &amp; Portfolio</b><small>Developer: Ahmed Ishtiaque Zarir</small></div><a class="sbtn" href="https://ahmedishtiaquezarir.pro.bd/" target="_blank" rel="noopener noreferrer">Contact</a></div>'+
+     '<div class="srow"><div><b>Source Code &amp; Releases</b><small>View GitHub repository, releases, and Android APK.</small></div><a class="sbtn" href="https://github.com/ImAhmedZarir/cinepulse" target="_blank" rel="noopener noreferrer">GitHub</a></div></div>'+
+   '<h2>Keyboard shortcuts</h2><div class="panel"><div class="srow"><small class="keys"><b>Space / K</b> play · <b>← →</b> ±5s · <b>J L</b> ±10s · <b>↑ ↓</b> volume · <b>M</b> mute · <b>F</b> fullscreen · <b>C</b> subtitles · <b>N</b> next episode · <b>/</b> search</small></div></div></div></div>';
   vMain.innerHTML=h;var si=$('#setInstall');if(si)si.onclick=installApp;
 }
 vMain.addEventListener('click',function(e){
@@ -1687,9 +1738,7 @@ vMain.addEventListener('click',function(e){
   if(a==='hist'){try{Object.keys(localStorage).forEach(function(k){if(k.indexOf('cp:pos:')===0)localStorage.removeItem(k)})}catch(_){}LS.del('cp:cw');toast('Watch history cleared')}
   else if(a==='list'){LS.del('cp:mylist');toast('My List cleared')}
   else if(a==='reset'){['cp:set','cp:glass','cp:q','cp:cc','cp:vol'].forEach(LS.del);location.reload()}
-  else if(a==='reset-gs'){LS.del('cp:getstarted_dismissed');toast('Get Started banner will show on Home')}
-  else if(a==='cache'){LS.del('cp:home');toast('Home cache cleared')}
-  else if(a==='credit'){credit(true)}
+  else if(a==='credit'){LS.del('cp:snooze');try{sessionStorage.removeItem('cp:cred')}catch(_){}credit(true)}
 });
 
 /* ═════════ Player ═════════ */
@@ -1848,7 +1897,7 @@ $('#pPlay').onclick=function(){togglePlay()};
 $('#pRew').onclick=function(){seekBy(-10)};$('#pFwd').onclick=function(){seekBy(10)};
 $('#pBack').onclick=function(){backFromPlayer()};
 $('#pNext').onclick=function(){var n=nextEp();if(n)playEp(n.se,n.ep)};
-$('#pDl').onclick=function(){openAppSheet()};
+$('#pDl').onclick=function(){openDownloadSheet(P.d,P.se,P.ep)};
 $('#pPip').onclick=function(){if(document.pictureInPictureElement)document.exitPictureInPicture();else if(vid.requestPictureInPicture)vid.requestPictureInPicture().catch(function(){})};
 $('#pFs').onclick=function(){toggleFs()};
 function fsEl(){return document.fullscreenElement||document.webkitFullscreenElement}
@@ -1951,26 +2000,13 @@ function mediaMeta(){
   h('nexttrack',nextEp()?function(){var n=nextEp();if(n)playEp(n.se,n.ep)}:null);
 }
 
-/* ═════════ Developer & Architecture Credits ═════════ */
+/* ═════════ Developer credit (first visit, snooze 7 days) ═════════ */
 function credit(force){
-  showSheet(LOGO+'<h3>CinePulse Ecosystem</h3>'+
-    '<p style="font-size:13px;color:var(--fg2);margin:8px 0 14px">Architected with Solid Glass &amp; Liquid Glass design system.</p>'+
-    '<div style="text-align:left;background:rgba(255,255,255,.05);border-radius:18px;padding:14px;border:1px solid rgba(255,255,255,.1);margin-bottom:14px">'+
-      '<b style="display:block;color:#fff;font-size:14px">ImAhmedZarir (Ahmed Ishtiaque Zarir)</b><small style="color:var(--fg2);display:block;margin-bottom:8px">Lead Contributor, Core Architecture &amp; API Integration · <a class="link" href="https://ahmedishtiaquezarir.pro.bd/" target="_blank" rel="noopener noreferrer">Portfolio</a></small>'+
-      '<b style="display:block;color:#fff;font-size:14px">QWEA0</b><small style="color:var(--fg2);display:block;margin-bottom:8px">Liquid Glass Android Component Library</small>'+
-      '<b style="display:block;color:#fff;font-size:14px">deeplethe</b><small style="color:var(--fg2);display:block;margin-bottom:8px">Solid Glass Design Tokens &amp; Physical Edge Specs</small>'+
-      '<b style="display:block;color:#fff;font-size:14px">ExoPlayer / Media3 &amp; Coil</b><small style="color:var(--fg2);display:block">Media Engine &amp; Image Pipeline</small>'+
-    '</div>'+
-    '<div style="text-align:left;font-size:11.5px;color:var(--fg3);line-height:1.45;margin-bottom:16px">'+
-      '<p><b>Non-Hosting Policy:</b> CinePulse does NOT host or stream copyrighted media. API exclusively indexes public metadata.</p>'+
-      '<p style="margin-top:4px"><b>Free Hosting &amp; DNS:</b> Hosted on free cloud tier. If blocked by your ISP, use custom DNS (1.1.1.1, 8.8.8.8) or a VPN.</p>'+
-      '<p style="margin-top:4px"><b>Donations &amp; Support:</b> Donate/contact: <a class="link" href="mailto:ahmedishtiaquezarir@gmail.com">ahmedishtiaquezarir@gmail.com</a> · Telegram: <a class="link" href="https://t.me/@imahmedzarir" target="_blank" rel="noopener noreferrer">https://t.me/@imahmedzarir</a></p>'+
-      '<p style="margin-top:4px"><b>Zero Tracking:</b> API collects no logs, no user tracking, and no external storage of watch history.</p>'+
-      '<p style="margin-top:4px"><b>Usage Terms:</b> Free to use strictly for non-commercial educational use.</p>'+
-      '<p style="margin-top:4px"><b>Client Security:</b> Source code is private and client connections cannot be cryptographically secured on untrusted environments.</p>'+
-    '</div>'+
-    '<div class="row"><button class="btn lg-solid press" id="cGo" style="width:100%">Close</button></div>',true);
-  $('#cGo').onclick=function(){hideSheet(true)};
+  var snz=LS.get('cp:snooze',0),seen=false;try{seen=sessionStorage.getItem('cp:cred')==='1'}catch(e){}
+  if(!force&&(Date.now()<snz||seen))return;
+  showSheet(LOGO+'<h3>CinePulse</h3><p>Designed &amp; developed by</p><a class="by" href="https://ahmedishtiaquezarir.pro.bd/" target="_blank" rel="noopener noreferrer">Ahmed Ishtiaque Zarir</a><div class="row two"><button class="btn lg press" id="cSnz">Snooze 7 days</button><button class="btn lg-solid press" id="cGo">Continue</button></div>',true);
+  $('#cSnz').onclick=function(){LS.set('cp:snooze',Date.now()+7*864e5);hideSheet(true)};
+  $('#cGo').onclick=function(){try{sessionStorage.setItem('cp:cred','1')}catch(e){}hideSheet(true)};
 }
 
 /* ═════════ Boot ═════════ */
