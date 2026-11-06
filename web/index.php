@@ -148,7 +148,7 @@ function cpguard(string $action): void {
         $ref = $_SERVER['HTTP_ORIGIN'] ?? ($_SERVER['HTTP_REFERER'] ?? '');
         if ($ref !== '' && $ref !== 'null' && strtolower((string)parse_url($ref, PHP_URL_HOST)) !== strtolower(preg_replace('/:\d+$/', '', $_SERVER['HTTP_HOST'] ?? ''))) throw new RuntimeException('Forbidden', 403);
     }
-    if (in_array(strtolower($_SERVER['HTTP_SEC_FETCH_DEST'] ?? ''), ['document', 'iframe', 'frame', 'embed', 'object'], true) && $action !== 'health') throw new RuntimeException('Forbidden', 403);
+    if (in_array(strtolower($_SERVER['HTTP_SEC_FETCH_DEST'] ?? ''), ['document', 'iframe', 'frame', 'embed', 'object'], true) && $action !== 'health' && !($action === 'proxy' && (isset($_GET['dl']) || isset($_GET['fn'])))) throw new RuntimeException('Forbidden', 403);
     if (in_array($action, ['suggest', 'feed', 'detailData', 'play', 'captions'], true) && !hash_equals(cptoken(), (string)($_SERVER['HTTP_X_CP_TOKEN'] ?? ''))) throw new RuntimeException('Forbidden', 403);
     if ($action === 'proxy') { /* streaming video chunks: no tight rate limit to prevent 502/playback stall */ } elseif ($action === 'play' || $action === 'captions') cprate('play', 60); else cprate('api', 300);
 }
@@ -380,11 +380,15 @@ function cprelay(): void {
     while (ob_get_level()>0) { if (!@ob_end_clean()) break; }
     $sent=false; $bad=''; $download='';
     $dl = cpq('dl', '');
-    if ($dl === '1') {
-        $fn = cpq('fn', '');
+    $fn = cpq('fn', '');
+    if ($dl === '1' && $fn !== '') {
         $download = preg_replace('/[^a-zA-Z0-9._ -]/', '_', $fn) ?: 'video.mp4';
-        if (!preg_match('/\.mp4$/i', $download)) $download .= '.mp4';
+    } elseif ($dl !== '' && $dl !== '0' && $dl !== '1') {
+        $download = preg_replace('/[^a-zA-Z0-9._ -]/', '_', $dl) ?: 'video.mp4';
+    } elseif ($fn !== '') {
+        $download = preg_replace('/[^a-zA-Z0-9._ -]/', '_', $fn) ?: 'video.mp4';
     }
+    if ($download !== '' && !preg_match('/\.mp4$/i', $download)) $download .= '.mp4';
     try {
         cphttp($url,$headers,false,$method,
             function($status,$hs) use (&$sent,&$bad,$download) {
@@ -983,7 +987,7 @@ img,video,a{-webkit-user-drag:none}
     <a href="?action=browse&amp;type=movies" data-r="browse" data-type="movies" data-nav="movies">Movies</a>
     <a href="?action=browse&amp;type=tv-series" data-r="browse" data-type="tv-series" data-nav="tv-series">Series</a>
     <a href="?action=browse&amp;type=animation" data-r="browse" data-type="animation" data-nav="animation">Anime</a>
-    <a href="?action=library" data-r="library" data-nav="library">My List</a>
+    <a href="?action=library" data-r="library" data-nav="library">Library</a>
     <a href="?action=settings" data-r="settings" data-nav="settings">Settings</a>
   </nav>
   <div class="nav-r">
@@ -997,7 +1001,7 @@ img,video,a{-webkit-user-drag:none}
   <a href="?action=browse&amp;type=movies" data-r="browse" data-type="movies" data-nav="movies"><svg class="i"><use href="#i-film"/></svg>Movies</a>
   <a href="?action=browse&amp;type=tv-series" data-r="browse" data-type="tv-series" data-nav="tv-series"><svg class="i"><use href="#i-tv"/></svg>Series</a>
   <a href="?action=browse&amp;type=animation" data-r="browse" data-type="animation" data-nav="animation"><svg class="i"><use href="#i-anime"/></svg>Anime</a>
-  <a href="?action=library" data-r="library" data-nav="library"><svg class="i"><use href="#i-list"/></svg>My List</a>
+  <a href="?action=library" data-r="library" data-nav="library"><svg class="i"><use href="#i-list"/></svg>Library</a>
   <a href="?action=settings" data-r="settings" data-nav="settings"><svg class="i"><use href="#i-gear"/></svg>Settings</a>
 </nav>
 
@@ -1602,10 +1606,125 @@ sIn.addEventListener('input',function(){
 sSug.addEventListener('click',function(e){var b=e.target.closest('button');if(b)doSearch(b.textContent)});
 
 /* ═════════ Library ═════════ */
-function viewLibrary(){
-  var list=LS.get('cp:mylist',[]);
-  if(!list.length){vMain.innerHTML='<div class="view"><div class="pagehead"><div><h1>My List</h1></div></div><div class="empty"><div class="ring lg">'+icon('list')+'</div><h3>Your list is empty</h3><p>Tap “My List” on any title to keep it here.</p></div></div>';glass($('.ring',vMain));return}
-  vMain.innerHTML='<div class="view"><div class="pagehead"><div><h1>My List</h1><p>'+list.length+' title'+(list.length>1?'s':'')+'</p></div></div><div class="grid">'+list.map(function(it){return card(it)}).join('')+'</div></div>';lazy(vMain);
+var curLibTab='watchlist';
+function dlList(){return LS.get('cp:downloads',[])}
+function saveDownloadRecord(rec){
+  var list=dlList().filter(function(x){return x.id!==rec.id});
+  list.unshift(rec);
+  if(list.length>100)list.length=100;
+  LS.set('cp:downloads',list);
+}
+function removeDownloadRecord(id){
+  var list=dlList().filter(function(x){return x.id!==id});
+  LS.set('cp:downloads',list);
+}
+function clearDownloadRecords(){
+  LS.set('cp:downloads',[]);
+}
+function viewLibrary(tab){
+  if(tab)curLibTab=tab;
+  var wList=LS.get('cp:mylist',[]);
+  var hList=cwList();
+  var dList=dlList();
+
+  var topAction='';
+  if(curLibTab==='history'&&hList.length){
+    topAction='<button class="btn sm lg press" id="btnClearHist" style="color:var(--crimson,#ee1e50)">Clear History</button>';
+  }else if(curLibTab==='downloads'&&dList.length){
+    topAction='<button class="btn sm lg press" id="btnClearDl" style="color:var(--crimson,#ee1e50)">Clear Downloads</button>';
+  }
+
+  var h='<div class="view">'+
+    '<div class="pagehead"><div><h1>Library</h1><p>Watchlist, playback history, and offline downloads.</p></div>'+topAction+'</div>'+
+    '<div style="padding:0 var(--pad) 20px">'+
+      '<div class="seg lg" id="libSeg">'+
+        '<button data-tab="watchlist" class="'+(curLibTab==='watchlist'?'on':'')+'">Watchlist ('+wList.length+')</button>'+
+        '<button data-tab="history" class="'+(curLibTab==='history'?'on':'')+'">History ('+hList.length+')</button>'+
+        '<button data-tab="downloads" class="'+(curLibTab==='downloads'?'on':'')+'">Downloads ('+dList.length+')</button>'+
+      '</div>'+
+    '</div>'+
+    '<div id="libContent"></div>'+
+  '</div>';
+
+  unlazy(vMain);vMain.innerHTML=h;
+  glass($('#libSeg'));
+  if($('#btnClearHist')){
+    glass($('#btnClearHist'));
+    $('#btnClearHist').onclick=function(){
+      try{Object.keys(localStorage).forEach(function(k){if(k.indexOf('cp:pos:')===0)localStorage.removeItem(k)})}catch(_){}
+      LS.del('cp:cw');
+      toast('Watch history cleared');
+      viewLibrary('history');
+    };
+  }
+  if($('#btnClearDl')){
+    glass($('#btnClearDl'));
+    $('#btnClearDl').onclick=function(){
+      clearDownloadRecords();
+      toast('Downloads list cleared');
+      viewLibrary('downloads');
+    };
+  }
+
+  $('#libSeg').onclick=function(e){
+    var b=e.target.closest('button[data-tab]');
+    if(!b)return;
+    curLibTab=b.getAttribute('data-tab');
+    $$('#libSeg button').forEach(function(x){x.classList.toggle('on',x===b)});
+    renderLibTab(curLibTab);
+  };
+
+  renderLibTab(curLibTab);
+}
+
+function renderLibTab(tab){
+  var cnt=$('#libContent');if(!cnt)return;
+  if(tab==='watchlist'){
+    var list=LS.get('cp:mylist',[]);
+    if(!list.length){
+      cnt.innerHTML='<div class="empty"><div class="ring lg">'+icon('list')+'</div><h3>Your watchlist is empty</h3><p>Tap "My List" on any movie or series to save it here.</p></div>';
+      glass($('.ring',cnt));return;
+    }
+    cnt.innerHTML='<div class="grid">'+list.map(function(it){return card(it)}).join('')+'</div>';
+    lazy(cnt);
+  }else if(tab==='history'){
+    var list=cwList();
+    if(!list.length){
+      cnt.innerHTML='<div class="empty"><div class="ring lg">'+icon('clock')+'</div><h3>No watch history yet</h3><p>Titles you start playing will appear here with progress tracking.</p></div>';
+      glass($('.ring',cnt));return;
+    }
+    cnt.innerHTML='<div class="grid">'+list.map(function(it){return card(it,cwExtra(it))}).join('')+'</div>';
+    lazy(cnt);
+  }else if(tab==='downloads'){
+    var list=dlList();
+    if(!list.length){
+      cnt.innerHTML='<div class="empty"><div class="ring lg">'+icon('dl')+'</div><h3>No downloads yet</h3><p>Click "Download" on any movie or episode to save MP4 files directly to your device.</p></div>';
+      glass($('.ring',cnt));return;
+    }
+    cnt.innerHTML='<div class="dls" style="display:grid;gap:12px;padding:0 var(--pad)">'+list.map(function(it){
+      var timeStr=it.time?new Date(it.time).toLocaleDateString():'';
+      return '<div class="dl lg" style="display:flex;align-items:center;gap:14px;padding:12px 16px;border-radius:20px">'+
+        '<div class="th" style="width:60px;height:84px;border-radius:12px;overflow:hidden;flex-shrink:0;background:rgba(255,255,255,.05)">'+
+          (it.poster?'<img src="'+esc(it.poster)+'" alt="" style="width:100%;height:100%;object-fit:cover">':'')+
+        '</div>'+
+        '<div class="in" style="flex:1;min-width:0">'+
+          '<b class="nm" style="display:block;font-size:15px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+esc(it.title)+'</b>'+
+          '<small class="sub" style="display:block;font-size:13px;color:var(--fg2);margin-top:3px">'+esc(it.epLabel?it.epLabel+' · ':'' )+'<span class="bdg" style="background:rgba(255,255,255,.12);padding:2px 6px;border-radius:6px;font-size:11px">'+esc(it.resolution||'MP4')+'</span>'+(it.size?' · '+esc(it.size):'')+(timeStr?' · '+esc(timeStr):'')+'</small>'+
+        '</div>'+
+        '<div class="bt" style="display:flex;gap:8px;flex-shrink:0">'+
+          '<a class="btn sm lg-solid press" href="'+esc(it.url)+'" download target="_blank" rel="noopener noreferrer">'+icon('dl')+'<span>Open</span></a>'+
+          '<button class="sbtn press del-dl" data-id="'+esc(it.id)+'" style="color:var(--crimson,#ee1e50)">'+icon('x')+'</button>'+
+        '</div>'+
+      '</div>';
+    }).join('')+'</div>';
+    $$('.dl.lg',cnt).forEach(function(el){glass(el)});
+    $$('.del-dl',cnt).forEach(function(b){
+      b.onclick=function(){
+        removeDownloadRecord(this.getAttribute('data-id'));
+        viewLibrary('downloads');
+      };
+    });
+  }
 }
 function inList(slug){return LS.get('cp:mylist',[]).some(function(x){return x.slug===slug})}
 function toggleList(d){
@@ -1676,8 +1795,9 @@ function openDownloadSheet(d,se,ep){
   d=d||P.d||D.d;if(!d)return;
   var isSeries=!!d.series,s=se||(isSeries?(P.se||D.se||1):0),e=ep||(isSeries?(P.ep||1):0);
   var epStr=isSeries?' - S'+s+'E'+e:'';
-  var filename=(d.title||'video').replace(/[/\\?%*:|"<>]/g,'_')+epStr+'.mp4';
-  showSheet(LOGO+'<h3>Download</h3><p>Fetching download links for '+esc(d.title+epStr)+'…</p><div class="sentinel"><div class="sk ln" style="width:60%"></div></div>');
+  var cleanTitle=(d.title||'video').replace(/[/\\?%*:|"<>]/g,'_');
+  var filename='CinePulse - '+cleanTitle+epStr+'.mp4';
+  showSheet(LOGO+'<h3>Download</h3><p>Fetching download links for '+esc(d.title+epStr)+'...</p><div class="sentinel"><div class="sk ln" style="width:60%"></div></div>');
   var pr={action:'play',slug:d.slug};if(isSeries){pr.se=s;pr.ep=e}if(d.id)pr.id=d.id;
   api(pr,0).then(function(res){
     var srcs=res.sources||[];
@@ -1685,20 +1805,50 @@ function openDownloadSheet(d,se,ep){
       showSheet(LOGO+'<h3>Download Unavailable</h3><p>No downloadable MP4 streams found for this selection.</p><div class="row"><button class="btn lg press" data-x="1">Close</button></div>');
       return;
     }
-    var rows=srcs.map(function(src){
+    var rows=srcs.map(function(src,idx){
       var resLabel=esc(src.resolution||'Auto');
-      var sz=esc(/^\d+$/.test(src.size)?fmtB(src.size):(src.size||''));
-      var dlUrl=(src.proxy||src.url)+'&dl=1&fn='+encodeURIComponent(filename);
-      return '<a class="qopt press" href="'+dlUrl+'" download="'+esc(filename)+'" target="_blank" rel="noopener noreferrer"><span>'+icon('dl')+' '+resLabel+'</span>'+(sz?'<small>'+sz+'</small>':'')+'</a>';
+      var sz=esc(/^\d+$/.test(src.size)?fmtB(src.size):(src.size||'MP4'));
+      var dlName='CinePulse - '+cleanTitle+epStr+' ('+(src.resolution||'MP4')+').mp4';
+      var dlUrl=(src.proxy||src.url)+'&dl=1&fn='+encodeURIComponent(dlName);
+      return '<button class="qopt press dl-choice" data-idx="'+idx+'" data-url="'+esc(dlUrl)+'" data-fn="'+esc(dlName)+'" data-res="'+esc(src.resolution||'1080p')+'" data-sz="'+sz+'">'+
+        '<span>'+icon('dl')+' '+resLabel+'</span>'+(sz?'<small>'+sz+'</small>':'')+
+      '</button>';
     }).join('');
     showSheet(LOGO+'<h3>Download '+esc(isSeries?d.title+' (S'+s+' E'+e+')':d.title)+'</h3><p>Select quality to start downloading directly:</p><div class="row" style="margin-top:14px;gap:8px">'+rows+'</div><div class="row" style="margin-top:14px"><button class="btn lg press" data-x="1">Cancel</button></div>');
+    $$('.dl-choice',$('#sheet')).forEach(function(btn){
+      btn.onclick=function(){
+        var dlUrl=this.getAttribute('data-url');
+        var dlName=this.getAttribute('data-fn');
+        var res=this.getAttribute('data-res');
+        var sz=this.getAttribute('data-sz');
+        saveDownloadRecord({
+          id:d.slug+(isSeries?'-'+s+'-'+e:'')+'-'+res,
+          slug:d.slug,
+          title:d.title,
+          epLabel:isSeries?'S'+s+' · E'+e:'',
+          poster:d.poster||'',
+          resolution:res,
+          size:sz,
+          url:dlUrl,
+          time:Date.now()
+        });
+        var a=document.createElement('a');
+        a.href=dlUrl;
+        a.download=dlName;
+        a.target='_blank';
+        document.body.appendChild(a);
+        a.click();
+        setTimeout(function(){a.remove()},1200);
+        hideSheet(true);
+        toast('Starting download: '+dlName);
+      };
+    });
   }).catch(function(err){
     showSheet(LOGO+'<h3>Download Error</h3><p>'+esc(err.message||'Failed to load streams')+'</p><div class="row"><button class="btn lg press" data-x="1">Close</button></div>');
   });
 }
-function openAppSheet(){
-  openDownloadSheet();
-}
+function triggerDownloadSheet(d,se,ep){openDownloadSheet(d,se,ep)}
+function openAppSheet(){openDownloadSheet()}
 
 /* ═════════ Settings ═════════ */
 function viewSettings(){
@@ -1714,13 +1864,15 @@ function viewSettings(){
      {t:'Subtitle size',h:'Applies to the subtitles shown on the video.',k:'cue',v:SET.cue,o:[['.8','Small'],['1','Medium'],['1.3','Large']]},
      {t:'Default quality',h:'Used whenever a stream starts. You can still switch inside the player.',k:'quality',v:q,o:[['','Auto'],['1080p','1080p'],['720p','720p'],['480p','480p']]}])+'</div>'+
    '<h2>Install</h2><div class="panel app"><div class="mk2">'+icon('plus')+'</div><div><b>Add CinePulse to your device</b><small>'+(standalone?'You\'re using the installed app.':'Install it like an app — its own window, no browser bars, one tap to open.')+'</small></div>'+(standalone?'':'<button class="btn sm lg-solid press" id="setInstall">Install</button>')+'</div>'+
-   '<h2>Your data</h2><div class="panel"><div class="srow"><div><b>Watch history</b><small>Clears Continue Watching and saved positions on this device.</small></div><button class="sbtn" data-do="hist">Clear</button></div>'+
-     '<div class="srow"><div><b>My List</b><small>Removes every saved title from your list.</small></div><button class="sbtn" data-do="list">Clear</button></div>'+
+   '<h2>Your data &amp; Cache</h2><div class="panel"><div class="srow"><div><b>Watch history</b><small>Clears Continue Watching and saved positions on this device.</small></div><button class="sbtn" data-do="hist">Clear</button></div>'+
+     '<div class="srow"><div><b>Watchlist</b><small>Removes every saved title from your watchlist.</small></div><button class="sbtn" data-do="list">Clear</button></div>'+
+     '<div class="srow"><div><b>Downloads history</b><small>Clears saved download records on this device.</small></div><button class="sbtn" data-do="dl">Clear</button></div>'+
      '<div class="srow"><div><b>Reset settings</b><small>Back to the defaults.</small></div><button class="sbtn" data-do="reset">Reset</button></div></div>'+
-   '<h2>Downloads</h2><div class="panel app"><div class="mk2">'+icon('dl')+'</div><div><b>Android app</b><small>Downloads work only in the open-source Android app. Get the latest release on GitHub.</small></div><a class="btn sm lg-solid press" href="'+APK+'" target="_blank" rel="noopener noreferrer">Get the app</a></div>'+
+   '<h2>Downloads &amp; Offline Media</h2><div class="panel app"><div class="mk2">'+icon('dl')+'</div><div><b>Direct Web Downloads &amp; Android App</b><small>Download 1080p, 720p, and 480p MP4 files directly from the browser on any title or episode, or use the native Android app.</small></div><div style="display:flex;gap:8px;flex-wrap:wrap"><a class="btn sm lg-solid press" href="?action=library" data-r="library">View Downloads</a><a class="btn sm lg-tint press" href="'+APK+'" target="_blank" rel="noopener noreferrer">Android APK</a></div></div>'+
    '<h2>Support &amp; Feedback</h2><div class="panel">'+
      '<div class="srow"><div><b>Report Bugs &amp; Broken Streams</b><small>Found an issue, stream problem, or want to request a movie or series?</small></div><a class="sbtn" href="https://github.com/ImAhmedZarir/cinepulse/issues" target="_blank" rel="noopener noreferrer">Report Issue</a></div>'+
-     '<div class="srow"><div><b>Developer Contact &amp; Portfolio</b><small>Developer: Ahmed Ishtiaque Zarir</small></div><a class="sbtn" href="https://ahmedishtiaquezarir.pro.bd/" target="_blank" rel="noopener noreferrer">Contact</a></div>'+
+     '<div class="srow"><div><b>Developer Contact &amp; Portfolio</b><small>Developer: Ahmed Ishtiaque Zarir (ImAhmedZarir)</small></div><a class="sbtn" href="https://ahmedishtiaquezarir.pro.bd/" target="_blank" rel="noopener noreferrer">Portfolio</a></div>'+
+     '<div class="srow"><div><b>Telegram Contact</b><small><a class="link" href="https://t.me/@imahmedzarir" target="_blank" rel="noopener noreferrer">https://t.me/@imahmedzarir</a></small></div><a class="sbtn" href="https://t.me/@imahmedzarir" target="_blank" rel="noopener noreferrer">Telegram</a></div>'+
      '<div class="srow"><div><b>Source Code &amp; Releases</b><small>View GitHub repository, releases, and Android APK.</small></div><a class="sbtn" href="https://github.com/ImAhmedZarir/cinepulse" target="_blank" rel="noopener noreferrer">GitHub</a></div></div>'+
    '<h2>Keyboard shortcuts</h2><div class="panel"><div class="srow"><small class="keys"><b>Space / K</b> play · <b>← →</b> ±5s · <b>J L</b> ±10s · <b>↑ ↓</b> volume · <b>M</b> mute · <b>F</b> fullscreen · <b>C</b> subtitles · <b>N</b> next episode · <b>/</b> search</small></div></div></div></div>';
   vMain.innerHTML=h;var si=$('#setInstall');if(si)si.onclick=installApp;
@@ -1736,7 +1888,8 @@ vMain.addEventListener('click',function(e){
     return}
   var d=e.target.closest('[data-do]');if(!d)return;var a=d.getAttribute('data-do');
   if(a==='hist'){try{Object.keys(localStorage).forEach(function(k){if(k.indexOf('cp:pos:')===0)localStorage.removeItem(k)})}catch(_){}LS.del('cp:cw');toast('Watch history cleared')}
-  else if(a==='list'){LS.del('cp:mylist');toast('My List cleared')}
+  else if(a==='list'){LS.del('cp:mylist');toast('Watchlist cleared')}
+  else if(a==='dl'){clearDownloadRecords();toast('Downloads list cleared')}
   else if(a==='reset'){['cp:set','cp:glass','cp:q','cp:cc','cp:vol'].forEach(LS.del);location.reload()}
   else if(a==='credit'){LS.del('cp:snooze');try{sessionStorage.removeItem('cp:cred')}catch(_){}credit(true)}
 });

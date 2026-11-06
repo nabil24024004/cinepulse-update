@@ -18,3 +18,4 @@ build/
 local.properties
 .env
 debug.keystore
+*.apk
